@@ -27,7 +27,11 @@ SYSTEM_PROMPT = """You will receive as input an english document with paragraphs
 
 Task: Find the first paragraph (not the first one) where the content clearly changes compared to the previous paragraphs.
 
-Output: Return the ID of the paragraph with the content shift as in the exemplified format: 'Answer: ID XXXX'.
+Output: 
+- If you find a content shift, return the ID of that paragraph: 'Answer: ID XXXX'
+- If the content is cohesive with no clear shift, respond with: 'Answer: NO SPLIT'
+
+Important: Only identify a split if there is a genuine content shift. Do NOT force a split if the paragraphs discuss the same topic or flow naturally together.
 
 Additional Considerations: Avoid very long groups of paragraphs. Aim for a good balance between identifying content shifts and keeping groups manageable."""
 
@@ -214,30 +218,34 @@ class LumberChunker:
         chunk_number = 0
         new_id_list = []
         
-        # Main chunking loop (preserves original algorithm exactly)
-        while chunk_number < len(id_chunks) - 5:
+        # Main chunking loop (allows analysis of short content)
+        while chunk_number < len(id_chunks) - 1:
             word_count = 0
             i = 0
             
-            # Build up paragraphs until we reach target token count
-            while word_count < self.target_chunk_tokens and i + chunk_number < len(id_chunks) - 1:
+            # Build up paragraphs until we reach target token count or end of document
+            while word_count < self.target_chunk_tokens and i + chunk_number < len(id_chunks):
                 i += 1
                 final_document = "\n".join(
-                    id_chunks[k] for k in range(chunk_number, i + chunk_number)
+                    id_chunks[k] for k in range(chunk_number, min(i + chunk_number, len(id_chunks)))
                 )
                 word_count = count_words(final_document)
             
-            # Adjust the document (from original implementation)
+            # If we only have 1-2 paragraphs left, just add them to the final chunk
+            if i <= 2 and chunk_number + i >= len(id_chunks):
+                break
+            
+            # Adjust the document to not overshoot
             if i == 1:
                 final_document = "\n".join(
-                    id_chunks[k] for k in range(chunk_number, i + chunk_number)
+                    id_chunks[k] for k in range(chunk_number, min(i + chunk_number, len(id_chunks)))
                 )
             else:
                 final_document = "\n".join(
-                    id_chunks[k] for k in range(chunk_number, i - 1 + chunk_number)
+                    id_chunks[k] for k in range(chunk_number, min(i - 1 + chunk_number, len(id_chunks)))
                 )
             
-            chunk_number = chunk_number + i - 1
+            next_chunk_number = chunk_number + max(i - 1, 1)
             
             # Build prompt and get LLM response
             question = f"\nDocument:\n{final_document}"
@@ -247,13 +255,18 @@ class LumberChunker:
             
             # Handle content flag (from original implementation)
             if gpt_output == "content_flag_increment":
-                chunk_number = chunk_number + 1
+                chunk_number = next_chunk_number
+            # Handle "NO SPLIT" response - content is cohesive, move to next window
+            elif "NO SPLIT" in gpt_output.upper():
+                print("Answer: NO SPLIT (content is cohesive)")
+                chunk_number = next_chunk_number
             else:
                 # Extract ID from response
                 extracted_id = extract_id_from_response(gpt_output)
                 
                 if extracted_id == -1:
                     print("repeat this one")  # Matching original debug output
+                    chunk_number = next_chunk_number  # Move forward to avoid infinite loop
                 else:
                     print(f"Answer: ID {extracted_id}")  # Matching original debug output
                     chunk_number = extracted_id
