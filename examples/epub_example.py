@@ -12,6 +12,7 @@ Usage:
 import os
 import sys
 from pathlib import Path
+from io import StringIO
 
 # Load environment variables fresh from .env file each time
 # Using override=True ensures .env values take precedence over system environment variables
@@ -150,6 +151,35 @@ def save_final_chunks(all_chunks: list, output_path: Path):
     total_chunks = sum(len(chunks) for _, chunks in all_chunks)
     print(f"Saved {total_chunks} chunks from {len(all_chunks)} chapters to: {output_path}")
 
+
+class TeeLogger:
+    """A class that writes to both stdout and a file simultaneously."""
+    
+    def __init__(self, file_path: Path):
+        self.file = open(file_path, "w", encoding="utf-8")
+        self.stdout = sys.stdout
+    
+    def write(self, message):
+        self.stdout.write(message)
+        self.file.write(message)
+        self.file.flush()  # Ensure immediate write
+    
+    def flush(self):
+        self.stdout.flush()
+        self.file.flush()
+    
+    def close(self):
+        self.file.close()
+    
+    def __enter__(self):
+        sys.stdout = self
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        sys.stdout = self.stdout
+        self.close()
+        return False
+
 def main():
     # Check for EPUB file argument
     if len(sys.argv) < 2:
@@ -212,8 +242,13 @@ def main():
         print(f"\nError extracting chapters: {e}")
         sys.exit(1)
 
-    # Step 2: Chunk each chapter
+    # Step 2: Chunk each chapter with logging
     print("\nStep 2: Chunking each chapter...")
+    
+    # Set up logging to file
+    log_file_path = output_folder / "llm_log.txt"
+    print(f"Logging LLM inputs/outputs to: {log_file_path}")
+    
     try:
         chunker = LumberChunker(
             provider=provider_id,
@@ -224,18 +259,24 @@ def main():
         all_chunks = []
         total_chunks = 0
         
-        for ch in chapters:
-            chapter_name = ch['chapter']
-            chapter_text = ch['text']
-            
-            if not chapter_text.strip():
-                print(f"  Skipping empty chapter: {chapter_name}")
-                continue
-            
-            chunks = chunker.chunk(chapter_text)
-            all_chunks.append((chapter_name, chunks))
-            total_chunks += len(chunks)
-            print(f"  {chapter_name}: {len(chunks)} chunks")
+        # Use TeeLogger to capture all output to both console and file
+        with TeeLogger(log_file_path) as logger:
+            for ch in chapters:
+                chapter_name = ch['chapter']
+                chapter_text = ch['text']
+                
+                if not chapter_text.strip():
+                    print(f"  Skipping empty chapter: {chapter_name}")
+                    continue
+                
+                print(f"\n{'#'*60}")
+                print(f"# PROCESSING CHAPTER: {chapter_name}")
+                print(f"{'#'*60}")
+                
+                chunks = chunker.chunk(chapter_text)
+                all_chunks.append((chapter_name, chunks))
+                total_chunks += len(chunks)
+                print(f"\n  {chapter_name}: {len(chunks)} chunks created")
             
     except Exception as e:
         print(f"\nError during chunking: {e}")
