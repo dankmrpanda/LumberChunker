@@ -13,7 +13,7 @@ from lumberchunker.providers import (
     OllamaProvider,
     OpenAIProvider,
 )
-from lumberchunker.utils import epub_to_text, read_file_or_epub
+from lumberchunker.utils import epub_to_text, epub_to_chapters, read_file_or_epub
 
 __version__ = "0.1.0"
 __all__ = [
@@ -24,6 +24,7 @@ __all__ = [
     "AnthropicProvider",
     "OllamaProvider",
     "epub_to_text",
+    "epub_to_chapters",
     "read_file_or_epub",
 ]
 

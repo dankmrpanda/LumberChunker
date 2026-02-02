@@ -6,7 +6,7 @@ These functions are derived from the original LumberChunker research implementat
 
 import re
 from pathlib import Path
-from typing import List, Union
+from typing import List, Optional, Union
 
 
 def count_words(input_string: str) -> int:
@@ -209,4 +209,163 @@ def read_file_or_epub(file_path: Union[str, Path]) -> str:
         # Read as plain text
         with open(path, 'r', encoding='utf-8') as f:
             return f.read()
+
+
+def epub_to_chapters(
+    epub_path: Union[str, Path],
+    provider: Union[str, "BaseLLMProvider"] = "openai",
+    api_key: Optional[str] = None,
+    model: Optional[str] = None,
+) -> List[dict]:
+    """
+    Extract chapters from an EPUB using LLM-powered boundary detection.
+    
+    This function uses intelligent extraction to:
+    - Identify narrative boundaries (skip front/back matter)
+    - Extract individual chapters with their titles
+    - Clean chapter starts to the true opening sentence
+    
+    Args:
+        epub_path: Path to the EPUB file.
+        provider: LLM provider - either a string ("gemini", "openai", "anthropic", "ollama")
+                  or a pre-configured BaseLLMProvider instance.
+        api_key: API key for the provider (not needed for Ollama or pre-configured providers).
+        model: Model name to use. If None, uses provider default.
+        
+    Returns:
+        List of dicts, each with:
+        - 'chapter': Chapter title
+        - 'text': Chapter content (cleaned)
+        
+    Raises:
+        ImportError: If required dependencies are not installed.
+        FileNotFoundError: If the EPUB file doesn't exist.
+        RuntimeError: If boundary detection fails.
+        
+    Example:
+        >>> # Using Gemini
+        >>> chapters = epub_to_chapters("book.epub", provider="gemini", api_key="...")
+        >>> 
+        >>> # Using the same provider as LumberChunker
+        >>> chunker = LumberChunker(provider="openai", api_key="...")
+        >>> chapters = epub_to_chapters("book.epub", provider="openai", api_key="...")
+    """
+    import asyncio
+    import warnings
+    
+    path = Path(epub_path)
+    if not path.exists():
+        raise FileNotFoundError(f"EPUB file not found: {epub_path}")
+    
+    # Import from EPUB_Extractor module
+    try:
+        from lumberchunker.EPUB_Extractor import (
+            run_boundary_detection,
+            KeptSection,
+            _extract_texts_for_sections,
+            _preprocess_records_collapse_newlines,
+            _clean_records_with_llm,
+            _set_extraction_provider,
+        )
+    except ImportError as e:
+        raise ImportError(
+            "EPUB_Extractor module not available. "
+            "Ensure all dependencies are installed: pip install ebooklib pydantic"
+        ) from e
+    
+    # Set up the provider
+    from lumberchunker.providers.base import BaseLLMProvider
+    
+    if isinstance(provider, BaseLLMProvider):
+        llm_provider = provider
+    elif isinstance(provider, str):
+        provider_name = provider.lower()
+        
+        # Import the appropriate provider
+        if provider_name == "gemini":
+            from lumberchunker.providers.gemini import GeminiProvider
+            kwargs = {"temperature": 0.0}
+            if model:
+                kwargs["model"] = model
+            if api_key:
+                kwargs["api_key"] = api_key
+            llm_provider = GeminiProvider(**kwargs)
+        elif provider_name == "openai":
+            from lumberchunker.providers.openai import OpenAIProvider
+            kwargs = {"temperature": 0.0}
+            if model:
+                kwargs["model"] = model
+            if api_key:
+                kwargs["api_key"] = api_key
+            llm_provider = OpenAIProvider(**kwargs)
+        elif provider_name == "anthropic":
+            from lumberchunker.providers.anthropic import AnthropicProvider
+            kwargs = {"temperature": 0.0}
+            if model:
+                kwargs["model"] = model
+            if api_key:
+                kwargs["api_key"] = api_key
+            llm_provider = AnthropicProvider(**kwargs)
+        elif provider_name == "ollama":
+            from lumberchunker.providers.ollama import OllamaProvider
+            kwargs = {"temperature": 0.0}
+            if model:
+                kwargs["model"] = model
+            llm_provider = OllamaProvider(**kwargs)
+        else:
+            raise ValueError(
+                f"Unknown provider '{provider}'. "
+                f"Supported: gemini, openai, anthropic, ollama"
+            )
+    else:
+        raise TypeError(
+            f"provider must be a string or BaseLLMProvider instance, got {type(provider)}"
+        )
+    
+    # Set the extraction provider
+    _set_extraction_provider(llm_provider)
+    
+    # Silence noisy warnings from ebooklib
+    warnings.filterwarnings("ignore", category=UserWarning, module=r"ebooklib.*")
+    warnings.filterwarnings("ignore", category=FutureWarning, module=r"ebooklib.*")
+    
+    try:
+        # Run boundary detection (model param is legacy, provider is used now)
+        parsed = asyncio.run(run_boundary_detection(str(path), model or "", tracker=None))
+        
+        if not isinstance(parsed, dict) or "kept_sections" not in parsed:
+            raise RuntimeError("Boundary detection failed: no sections found")
+        
+        # Build KeptSection objects
+        kept_objs = []
+        for item in parsed.get("kept_sections", []):
+            if isinstance(item, dict):
+                kept_objs.append(KeptSection(
+                    href=item.get("href", ""),
+                    title=item.get("title", ""),
+                    full_title=item.get("full_title") or item.get("title", ""),
+                    order=int(item.get("order", 0) or 0),
+                ))
+        
+        # Extract texts for sections
+        records = _extract_texts_for_sections(str(path), kept_objs)
+        
+        # Preprocess and clean records
+        records = _preprocess_records_collapse_newlines(records)
+        records = _clean_records_with_llm(records, model or "", tracker=None)
+        
+        # Build simplified output
+        chapters = [
+            {
+                "chapter": record.get("full_title") or record.get("title", ""),
+                "text": record.get("text", "")
+            }
+            for record in records
+        ]
+        
+        return chapters
+    finally:
+        # Reset provider to avoid polluting global state
+        _set_extraction_provider(None)
+
 
