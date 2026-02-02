@@ -102,30 +102,31 @@ def create_output_folder(epub_path: Path) -> Path:
         counter += 1
 
 def save_epub_chapters_with_ids(chapters: list, output_path: Path):
-    """Save EPUB chapters with ID markers to a text file.
+    """Save EPUB chapters with paragraph ID markers to a text file.
     
-    This saves the output from the EPUB converter, assigning IDs to each chapter.
+    This saves the output from the EPUB converter, with IDs assigned to each paragraph.
     
     Args:
-        chapters: List of chapter dicts with 'chapter' and 'text' keys.
+        chapters: List of chapter dicts with 'chapter', 'text', and 'text_with_ids' keys.
         output_path: Path to save the output file.
     """
     with open(output_path, "w", encoding="utf-8") as f:
-        f.write("EPUB Converter Output - Chapters with IDs\n")
+        f.write("EPUB Converter Output - Paragraphs with IDs\n")
         f.write("=" * 50 + "\n\n")
         
         for i, ch in enumerate(chapters):
             chapter_name = ch['chapter']
-            chapter_text = ch['text']
-            word_count = len(chapter_text.split())
+            # Use text_with_ids which has paragraph-level IDs
+            chapter_text_with_ids = ch.get('text_with_ids', ch['text'])
+            word_count = len(ch['text'].split())
             
-            f.write(f"ID {i}: {chapter_name}\n")
+            f.write(f"=== Chapter {i}: {chapter_name} ===\n")
             f.write(f"Word Count: {word_count:,}\n")
-            f.write("-" * 40 + "\n")
-            f.write(chapter_text)
+            f.write("-" * 40 + "\n\n")
+            f.write(chapter_text_with_ids)
             f.write("\n\n" + "=" * 50 + "\n\n")
     
-    print(f"Saved {len(chapters)} chapters with IDs to: {output_path}")
+    print(f"Saved {len(chapters)} chapters with paragraph IDs to: {output_path}")
 
 def save_final_chunks(all_chunks: list, output_path: Path):
     """Save final chunking results to a text file.

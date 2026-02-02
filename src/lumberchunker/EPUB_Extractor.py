@@ -1251,7 +1251,8 @@ def _html_to_text(html: str) -> str:
 def _extract_texts_for_sections(epub_path: str, kept_sections: List[KeptSection]) -> List[dict]:
 	"""Return records with chapter metadata and full plain text for each kept section.
 
-	Each record has: order, href, title, full_title, text
+	Each record has: order, href, title, full_title, text, text_with_ids
+	The text_with_ids field contains paragraphs prefixed with "ID X:" for tracking.
 	"""
 	_ensure_deps()
 	try:
@@ -1262,6 +1263,7 @@ def _extract_texts_for_sections(epub_path: str, kept_sections: List[KeptSection]
 
 	book = _epub.read_epub(epub_path)
 	records: List[dict] = []
+	global_paragraph_id = 0  # Global counter for paragraph IDs across all chapters
 	
 	for s in sorted(kept_sections, key=lambda x: x.order):
 		# Parse href to separate file path and fragment
@@ -1292,15 +1294,52 @@ def _extract_texts_for_sections(epub_path: str, kept_sections: List[KeptSection]
 		except Exception:
 			# Best-effort; leave text empty on failure
 			text = ""
+		
+		# Split text into paragraphs and assign IDs
+		paragraphs = _split_into_paragraphs(text)
+		
+		# Build text with paragraph IDs
+		paragraphs_with_ids = []
+		paragraph_id_mapping = []  # Store (id, paragraph) tuples
+		for para in paragraphs:
+			if para.strip():  # Only assign IDs to non-empty paragraphs
+				paragraphs_with_ids.append(f"ID {global_paragraph_id}: {para}")
+				paragraph_id_mapping.append((global_paragraph_id, para))
+				global_paragraph_id += 1
+		
+		text_with_ids = "\n\n".join(paragraphs_with_ids)
 			
 		records.append({
 			"order": s.order,
 			"href": s.href,
 			"title": s.title,
 			"full_title": getattr(s, 'full_title', s.title),
-			"text": text,
+			"text": text,  # Original text without IDs
+			"text_with_ids": text_with_ids,  # Text with paragraph IDs
+			"paragraph_id_mapping": paragraph_id_mapping,  # List of (id, paragraph) tuples
 		})
 	return records
+
+
+def _split_into_paragraphs(text: str) -> List[str]:
+	"""Split text into paragraphs based on double newlines or multiple newlines.
+	
+	Args:
+		text: The text to split.
+		
+	Returns:
+		List of paragraph strings.
+	"""
+	if not text:
+		return []
+	
+	# Split on double newlines or multiple consecutive newlines
+	paragraphs = re.split(r'\n\s*\n+', text.strip())
+	
+	# Filter out empty paragraphs and strip whitespace
+	paragraphs = [p.strip() for p in paragraphs if p.strip()]
+	
+	return paragraphs
 
 
 # --- Token counting helper (kept for estimation reporting) ---

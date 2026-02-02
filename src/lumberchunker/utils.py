@@ -358,7 +358,8 @@ def epub_to_chapters(
         chapters = [
             {
                 "chapter": record.get("full_title") or record.get("title", ""),
-                "text": record.get("text", "")
+                "text": record.get("text", ""),
+                "text_with_ids": record.get("text_with_ids", ""),
             }
             for record in records
         ]
