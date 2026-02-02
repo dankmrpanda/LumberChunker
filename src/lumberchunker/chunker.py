@@ -196,11 +196,13 @@ class LumberChunker:
         """
         Chunk a list of paragraphs into semantically coherent segments.
         
-        This method implements the original LumberChunker algorithm exactly:
+        This method implements the LumberChunker algorithm:
         1. Add IDs to each paragraph
         2. Iteratively build groups of paragraphs up to target token count
-        3. Ask LLM to identify where content shifts
-        4. Merge paragraphs between shift points into final chunks
+        3. Ask LLM to identify where content shifts (model outputs only the ID)
+        4. Concatenate paragraphs from start to split ID into a chunk
+        5. If "NO SPLIT": carry over the last ID and add more paragraphs
+        6. Always ensure at least 2 IDs are sent to the model
         
         Args:
             paragraphs: List of paragraph strings.
@@ -212,94 +214,134 @@ class LumberChunker:
         if not paragraphs:
             return []
         
-        # Add IDs to paragraphs (matching original implementation)
+        # Add IDs to paragraphs
         id_chunks = [f"ID {i}: {para}" for i, para in enumerate(paragraphs)]
         
-        chunk_number = 0
-        new_id_list = []
+        # Track chunk boundaries (list of end IDs for each chunk)
+        chunk_boundaries = []
         
-        # Main chunking loop (allows analysis of short content)
-        while chunk_number < len(id_chunks) - 1:
+        # Current window start position
+        window_start = 0
+        
+        # Main chunking loop
+        while window_start < len(id_chunks):
+            # Calculate window end: expand until we reach ~550 words or end of document
             word_count = 0
-            i = 0
+            window_end = window_start
             
-            # Build up paragraphs until we reach target token count or end of document
-            while word_count < self.target_chunk_tokens and i + chunk_number < len(id_chunks):
-                i += 1
-                final_document = "\n".join(
-                    id_chunks[k] for k in range(chunk_number, min(i + chunk_number, len(id_chunks)))
-                )
-                word_count = count_words(final_document)
+            while word_count < self.target_chunk_tokens and window_end < len(id_chunks):
+                window_end += 1
+                window_text = "\n".join(id_chunks[window_start:window_end])
+                word_count = count_words(window_text)
             
-            # If we only have 1-2 paragraphs left, just add them to the final chunk
-            if i <= 2 and chunk_number + i >= len(id_chunks):
+            # Ensure we have at least 2 IDs in the window (requirement)
+            if window_end - window_start < 2:
+                window_end = min(window_start + 2, len(id_chunks))
+            
+            # If we've reached the end of the document, this is the last chunk
+            if window_end >= len(id_chunks):
+                # Add remaining paragraphs as the final chunk
+                chunk_boundaries.append(len(id_chunks))
                 break
             
-            # Adjust the document to not overshoot
-            if i == 1:
-                final_document = "\n".join(
-                    id_chunks[k] for k in range(chunk_number, min(i + chunk_number, len(id_chunks)))
-                )
-            else:
-                final_document = "\n".join(
-                    id_chunks[k] for k in range(chunk_number, min(i - 1 + chunk_number, len(id_chunks)))
-                )
+            # Build the document for LLM analysis
+            # Back off by 1 to not overshoot the target token count
+            if window_end - window_start > 2:
+                window_end -= 1
             
-            next_chunk_number = chunk_number + max(i - 1, 1)
+            final_document = "\n".join(id_chunks[window_start:window_end])
+            
+            # Log what we're sending to the model
+            print(f"\n{'='*60}")
+            print(f"[LLM INPUT] Sending IDs {window_start} to {window_end - 1} ({window_end - window_start} paragraphs)")
+            print(f"{'='*60}")
+            print(final_document[:500] + "..." if len(final_document) > 500 else final_document)
+            print(f"{'='*60}")
             
             # Build prompt and get LLM response
-            question = f"\nDocument:\n{final_document}"
-            prompt = question  # System prompt is handled in _llm_prompt
-            
+            prompt = f"\nDocument:\n{final_document}"
             gpt_output = self._llm_prompt(prompt)
             
-            # Handle content flag (from original implementation)
-            if gpt_output == "content_flag_increment":
-                chunk_number = next_chunk_number
-            # Handle "NO SPLIT" response - content is cohesive, move to next window
-            elif "NO SPLIT" in gpt_output.upper():
+            # Log what the model returned
+            print(f"\n[LLM OUTPUT] Raw response: {gpt_output}")
+            
+            # Handle "NO SPLIT" response
+            if "NO SPLIT" in gpt_output.upper():
                 print("Answer: NO SPLIT (content is cohesive)")
-                chunk_number = next_chunk_number
-            else:
-                # Extract ID from response
-                extracted_id = extract_id_from_response(gpt_output)
+                # Per spec: next request should include the last ID from this window
+                # plus at least 1 more paragraph (or until ~550 words)
+                # Set window_start to last ID in current window (window_end - 1)
+                # This means we'll include window_end-1 again in next iteration
+                window_start = window_end - 1
                 
-                if extracted_id == -1:
-                    print("repeat this one")  # Matching original debug output
-                    chunk_number = next_chunk_number  # Move forward to avoid infinite loop
-                else:
-                    print(f"Answer: ID {extracted_id}")  # Matching original debug output
-                    chunk_number = extracted_id
-                    new_id_list.append(chunk_number)
-                    
-                    # Increment to avoid infinite loop (from original implementation)
-                    if new_id_list[-1] == chunk_number:
-                        chunk_number = chunk_number + 1
+                # Ensure we can still make progress
+                if window_start >= len(id_chunks) - 1:
+                    # We're at the end, add everything as final chunk
+                    chunk_boundaries.append(len(id_chunks))
+                    break
+                continue
+            
+            # Handle content flag (legacy support)
+            if gpt_output == "content_flag_increment":
+                window_start = window_end - 1
+                continue
+            
+            # Extract ID from response
+            extracted_id = extract_id_from_response(gpt_output)
+            
+            if extracted_id == -1:
+                print("Could not parse ID, moving forward")
+                # Move forward to avoid infinite loop
+                window_start = window_end - 1
+                continue
+            
+            # Validate extracted_id is within current window
+            if extracted_id < window_start or extracted_id >= window_end:
+                print(f"ID {extracted_id} outside window [{window_start}, {window_end}), adjusting")
+                # Clamp to valid range
+                extracted_id = max(window_start + 1, min(extracted_id, window_end - 1))
+            
+            print(f"Answer: ID {extracted_id}")
+            
+            # Record the boundary: chunk goes from previous boundary (or 0) to extracted_id
+            chunk_boundaries.append(extracted_id)
+            
+            # Next window starts at the split point (extracted_id)
+            window_start = extracted_id
+            
+            # Prevent infinite loop: if we're stuck at the same position
+            if chunk_boundaries and len(chunk_boundaries) >= 2:
+                if chunk_boundaries[-1] == chunk_boundaries[-2]:
+                    window_start = extracted_id + 1
         
-        # Add the last chunk to the list
-        new_id_list.append(len(id_chunks))
+        # Handle edge case: if no boundaries were found, treat entire document as one chunk
+        if not chunk_boundaries:
+            chunk_boundaries = [len(id_chunks)]
         
-        # Remove IDs from chunks (they no longer make sense here)
+        # Remove IDs from paragraphs for final output
         clean_paragraphs = [
             re.sub(r'^ID \d+:\s*', '', chunk) for chunk in id_chunks
         ]
         
-        # Create final chunks by merging paragraphs between shift points
+        # Create final chunks by merging paragraphs between boundaries
         final_chunks = []
-        for i in range(len(new_id_list)):
-            start_idx = new_id_list[i - 1] if i > 0 else 0
-            end_idx = new_id_list[i]
+        prev_boundary = 0
+        for boundary in chunk_boundaries:
+            if boundary <= prev_boundary:
+                continue  # Skip invalid boundaries
             
-            chunk_text = '\n'.join(clean_paragraphs[start_idx:end_idx])
+            chunk_text = '\n'.join(clean_paragraphs[prev_boundary:boundary])
             
             if return_metadata:
                 final_chunks.append({
                     "text": chunk_text,
-                    "start_paragraph": start_idx,
-                    "end_paragraph": end_idx,
-                    "paragraph_count": end_idx - start_idx,
+                    "start_paragraph": prev_boundary,
+                    "end_paragraph": boundary,
+                    "paragraph_count": boundary - prev_boundary,
                 })
             else:
                 final_chunks.append(chunk_text)
+            
+            prev_boundary = boundary
         
         return final_chunks
