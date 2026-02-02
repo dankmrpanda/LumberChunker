@@ -71,9 +71,73 @@ def select_provider():
             pass
         print("Invalid choice. Please enter 1-4.")
 
-def save_chunks(all_chunks, output_path):
-    """Save chunks to a text file with chapter information."""
+def create_output_folder(epub_path: Path) -> Path:
+    """Create output folder for EPUB processing results.
+    
+    Creates a folder based on the EPUB filename. If a folder with the same name
+    already exists, appends a number (1, 2, 3, etc.) to create a unique folder.
+    
+    Args:
+        epub_path: Path to the EPUB file.
+        
+    Returns:
+        Path to the created output folder.
+    """
+    base_name = epub_path.stem  # Get filename without extension
+    parent_dir = epub_path.parent
+    
+    # Try the base folder name first
+    output_folder = parent_dir / base_name
+    if not output_folder.exists():
+        output_folder.mkdir(parents=True, exist_ok=True)
+        return output_folder
+    
+    # If it exists, add incrementing numbers until we find a unique name
+    counter = 1
+    while True:
+        output_folder = parent_dir / f"{base_name}_{counter}"
+        if not output_folder.exists():
+            output_folder.mkdir(parents=True, exist_ok=True)
+            return output_folder
+        counter += 1
+
+def save_epub_chapters_with_ids(chapters: list, output_path: Path):
+    """Save EPUB chapters with ID markers to a text file.
+    
+    This saves the output from the EPUB converter, assigning IDs to each chapter.
+    
+    Args:
+        chapters: List of chapter dicts with 'chapter' and 'text' keys.
+        output_path: Path to save the output file.
+    """
     with open(output_path, "w", encoding="utf-8") as f:
+        f.write("EPUB Converter Output - Chapters with IDs\n")
+        f.write("=" * 50 + "\n\n")
+        
+        for i, ch in enumerate(chapters):
+            chapter_name = ch['chapter']
+            chapter_text = ch['text']
+            word_count = len(chapter_text.split())
+            
+            f.write(f"ID {i}: {chapter_name}\n")
+            f.write(f"Word Count: {word_count:,}\n")
+            f.write("-" * 40 + "\n")
+            f.write(chapter_text)
+            f.write("\n\n" + "=" * 50 + "\n\n")
+    
+    print(f"Saved {len(chapters)} chapters with IDs to: {output_path}")
+
+def save_final_chunks(all_chunks: list, output_path: Path):
+    """Save final chunking results to a text file.
+    
+    Args:
+        all_chunks: List of (chapter_name, chunks) tuples.
+        output_path: Path to save the output file.
+    """
+    with open(output_path, "w", encoding="utf-8") as f:
+        f.write("Final Chunking Output\n")
+        f.write("=" * 50 + "\n\n")
+        
         for chapter_name, chunks in all_chunks:
             f.write(f"=== {chapter_name} ===\n\n")
             for i, chunk in enumerate(chunks):
@@ -106,6 +170,10 @@ def main():
     print(f"====================")
     print(f"Input: {epub_path}")
 
+    # Create output folder for this EPUB
+    output_folder = create_output_folder(epub_path)
+    print(f"Output folder: {output_folder}")
+
     # Let user select provider
     provider_id = select_provider()
     key_var, model_var, default_model = PROVIDERS[provider_id]
@@ -130,6 +198,10 @@ def main():
         for i, ch in enumerate(chapters):
             word_count = len(ch['text'].split())
             print(f"  {i+1}. {ch['chapter']} ({word_count:,} words)")
+        
+        # Save epub converter output with IDs
+        epub_converter_output = output_folder / "epub_chapters_with_ids.txt"
+        save_epub_chapters_with_ids(chapters, epub_converter_output)
             
     except ImportError as e:
         print(f"\nError: {e}")
@@ -190,9 +262,12 @@ def main():
         if len(first_chunks) > 3:
             print(f"  ... and {len(first_chunks) - 3} more chunks in this chapter")
 
-    # Save to file
-    output_path = epub_path.with_suffix(".chunks.txt")
-    save_chunks(all_chunks, output_path)
+    # Save final chunks to the output folder
+    final_chunks_output = output_folder / "final_chunks.txt"
+    save_final_chunks(all_chunks, final_chunks_output)
+    
+    print(f"\nAll outputs saved to: {output_folder}")
 
 if __name__ == "__main__":
     main()
+
