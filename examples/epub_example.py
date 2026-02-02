@@ -13,14 +13,15 @@ import os
 import sys
 from pathlib import Path
 
-# Load environment variables
+# Load environment variables fresh from .env file each time
+# Using override=True ensures .env values take precedence over system environment variables
 try:
     from dotenv import load_dotenv
     env_file = Path(__file__).parent / ".env"
     if not env_file.exists():
         env_file = Path(__file__).parent.parent / ".env"
     if env_file.exists():
-        load_dotenv(env_file, override=False)
+        load_dotenv(env_file, override=True)
 except ImportError:
     pass
 
