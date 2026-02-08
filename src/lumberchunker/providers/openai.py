@@ -75,6 +75,8 @@ class OpenAIProvider(BaseLLMProvider):
         Returns:
             The generated text response.
         """
+        import time as _time
+
         def _generate():
             client = self._get_client()
             
@@ -82,12 +84,23 @@ class OpenAIProvider(BaseLLMProvider):
             if system_prompt:
                 messages.append({"role": "system", "content": system_prompt})
             messages.append({"role": "user", "content": prompt})
-            
+
+            t0 = _time.perf_counter()
             completion = client.chat.completions.create(
                 model=self.model,
                 temperature=self.temperature,
                 messages=messages,
             )
+            elapsed_ms = (_time.perf_counter() - t0) * 1000
+
+            # Record token usage
+            input_tok = 0
+            output_tok = 0
+            if completion.usage:
+                input_tok = completion.usage.prompt_tokens or 0
+                output_tok = completion.usage.completion_tokens or 0
+            self.usage.record(input_tokens=input_tok, output_tokens=output_tok, duration_ms=elapsed_ms)
+
             return completion.choices[0].message.content
         
         return self._retry_with_backoff(_generate)

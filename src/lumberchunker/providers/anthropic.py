@@ -79,6 +79,8 @@ class AnthropicProvider(BaseLLMProvider):
         Returns:
             The generated text response.
         """
+        import time as _time
+
         def _generate():
             client = self._get_client()
             
@@ -93,8 +95,19 @@ class AnthropicProvider(BaseLLMProvider):
             
             if system_prompt:
                 kwargs["system"] = system_prompt
-            
+
+            t0 = _time.perf_counter()
             message = client.messages.create(**kwargs)
+            elapsed_ms = (_time.perf_counter() - t0) * 1000
+
+            # Record token usage from Anthropic's usage object
+            input_tok = 0
+            output_tok = 0
+            if message.usage:
+                input_tok = getattr(message.usage, "input_tokens", 0) or 0
+                output_tok = getattr(message.usage, "output_tokens", 0) or 0
+            self.usage.record(input_tokens=input_tok, output_tokens=output_tok, duration_ms=elapsed_ms)
+
             return message.content[0].text
         
         return self._retry_with_backoff(_generate)

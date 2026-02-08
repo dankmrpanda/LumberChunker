@@ -21,7 +21,7 @@ class GeminiProvider(BaseLLMProvider):
         >>> response = provider.generate("Hello, world!")
     """
     
-    DEFAULT_MODEL = "gemini-2.0-flash"
+    DEFAULT_MODEL = "gemini-2.0-flash-lite"
     
     def __init__(
         self,
@@ -65,25 +65,47 @@ class GeminiProvider(BaseLLMProvider):
             self._client = genai.Client(api_key=self.api_key)
         return self._client
     
-    def generate(self, prompt: str) -> str:
+    def generate(self, prompt: str, system_prompt: Optional[str] = None) -> str:
         """
         Generate a response using Gemini.
         
         Args:
             prompt: The input prompt.
+            system_prompt: Optional system prompt for context.
             
         Returns:
             The generated text response.
         """
+        import time as _time
+
         def _generate():
             client = self._get_client()
+            
+            # Combine system prompt with user content for Gemini
+            if system_prompt:
+                full_prompt = f"{system_prompt}\n\n{prompt}"
+            else:
+                full_prompt = prompt
+
+            t0 = _time.perf_counter()
             response = client.models.generate_content(
                 model=self.model,
-                contents=prompt,
+                contents=full_prompt,
                 config={
                     "temperature": self.temperature,
                 }
             )
+            elapsed_ms = (_time.perf_counter() - t0) * 1000
+
+            # Record token usage from Gemini's usage_metadata
+            input_tok = 0
+            output_tok = 0
+            meta = getattr(response, "usage_metadata", None)
+            if meta:
+                input_tok = getattr(meta, "prompt_token_count", 0) or 0
+                output_tok = getattr(meta, "candidates_token_count", 0) or 0
+            self.usage.record(input_tokens=input_tok, output_tokens=output_tok, duration_ms=elapsed_ms)
+
             return response.text
         
         return self._retry_with_backoff(_generate)

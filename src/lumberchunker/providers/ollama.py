@@ -70,6 +70,8 @@ class OllamaProvider(BaseLLMProvider):
         Returns:
             The generated text response.
         """
+        import time as _time
+
         def _generate():
             client = self._get_client()
             
@@ -77,7 +79,8 @@ class OllamaProvider(BaseLLMProvider):
             if system_prompt:
                 messages.append({"role": "system", "content": system_prompt})
             messages.append({"role": "user", "content": prompt})
-            
+
+            t0 = _time.perf_counter()
             response = client.chat(
                 model=self.model,
                 messages=messages,
@@ -85,6 +88,13 @@ class OllamaProvider(BaseLLMProvider):
                     "temperature": self.temperature,
                 },
             )
+            elapsed_ms = (_time.perf_counter() - t0) * 1000
+
+            # Record token usage from Ollama's response
+            input_tok = response.get("prompt_eval_count", 0) or 0
+            output_tok = response.get("eval_count", 0) or 0
+            self.usage.record(input_tokens=input_tok, output_tokens=output_tok, duration_ms=elapsed_ms)
+
             return response["message"]["content"]
         
         return self._retry_with_backoff(_generate)

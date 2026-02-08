@@ -43,124 +43,83 @@ Once upon a time, a very long time ago now, about last Friday, Winnie-the-Pooh l
 "What does 'under the name' mean?" asked Christopher Robin.
 """
 
-# Configuration for supported providers
+# Provider configuration: (api_key_env_var, model_env_var, default_model)
 PROVIDERS = {
-    "gemini": {
-        "name": "Google Gemini",
-        "api_key_var": "GEMINI_API_KEY",
-        "model_var": "GEMINI_MODEL",
-        "default_model": "gemini-2.0-flash"
-    },
-    "openai": {
-        "name": "OpenAI",
-        "api_key_var": "OPENAI_API_KEY",
-        "model_var": "OPENAI_MODEL",
-        "default_model": "gpt-4o"
-    },
-    "anthropic": {
-        "name": "Anthropic Claude",
-        "api_key_var": "ANTHROPIC_API_KEY",
-        "model_var": "ANTHROPIC_MODEL",
-        "default_model": "claude-sonnet-4-20250514"
-    },
-    "ollama": {
-        "name": "Ollama (Local)",
-        "api_key_var": None,
-        "model_var": "OLLAMA_MODEL",
-        "default_model": "llama3.3"
-    }
+    "gemini": ("GEMINI_API_KEY", "GEMINI_MODEL", "gemini-2.0-flash"),
+    "openai": ("OPENAI_API_KEY", "OPENAI_MODEL", "gpt-4o"),
+    "anthropic": ("ANTHROPIC_API_KEY", "ANTHROPIC_MODEL", "claude-sonnet-4-20250514"),
+    "ollama": (None, "OLLAMA_MODEL", "llama3.3"),
 }
 
-def save_chunks(chunks, provider):
-    """Save chunks to a text file."""
-    filename = f"chunks_{provider}.txt"
-    try:
-        with open(filename, "w", encoding="utf-8") as f:
-            for i, chunk in enumerate(chunks):
-                f.write(f"--- Chunk {i+1} ---\n")
-                # Handle both string chunks and dictionary chunks (with metadata)
-                if isinstance(chunk, dict):
-                    f.write(str(chunk.get('text', chunk)))
-                else:
-                    f.write(str(chunk))
-                f.write("\n\n")
-        print(f"Saved chunks to: {filename}")
-    except Exception as e:
-        print(f"Failed to save chunks: {e}")
+
+def select_provider():
+    """Interactive provider selection."""
+    print("\nSelect LLM Provider:")
+    print("--------------------")
+    names = list(PROVIDERS.keys())
+    for i, name in enumerate(names, 1):
+        key_var = PROVIDERS[name][0]
+        has_key = key_var is None or os.environ.get(key_var)
+        status = "" if has_key else " (no API key)"
+        print(f"  {i}. {name}{status}")
+
+    while True:
+        try:
+            choice = input(f"\nEnter choice (1-{len(names)}, q to quit): ").strip().lower()
+            if choice == 'q':
+                return None
+            idx = int(choice) - 1
+            if 0 <= idx < len(names):
+                return names[idx]
+        except (ValueError, IndexError):
+            pass
+        print("Invalid choice.")
+
 
 def main():
     print("LumberChunker Example")
     print("---------------------")
-    
-    # 1. Select Provider
-    print("Select a provider:")
-    provider_keys = list(PROVIDERS.keys())
-    for i, key in enumerate(provider_keys):
-        p = PROVIDERS[key]
-        status = ""
-        if p["api_key_var"]:
-             if os.environ.get(p["api_key_var"]):
-                 status = "(key found)"
-             else:
-                 status = "(no key)"
-        elif key == "ollama":
-            status = "(local)"
-            
-        print(f"{i+1}. {p['name']} {status}")
-    
-    choice = input("\nEnter choice (1-4, q to quit): ").strip().lower()
-    if choice == 'q':
+
+    provider_id = select_provider()
+    if provider_id is None:
         return
 
-    try:
-        idx = int(choice) - 1
-        if not (0 <= idx < len(provider_keys)):
-            print("Invalid selection.")
-            return
-        provider_id = provider_keys[idx]
-    except ValueError:
-        print("Invalid input.")
-        return
+    key_var, model_var, default_model = PROVIDERS[provider_id]
+    api_key = os.environ.get(key_var) if key_var else None
+    model = os.environ.get(model_var, default_model)
 
-    # 2. Configure Provider
-    config = PROVIDERS[provider_id]
-    api_key_var = config["api_key_var"]
-    
-    if api_key_var and not os.environ.get(api_key_var):
-        print(f"\nError: {api_key_var} not set in environment.")
+    if key_var and not api_key:
+        print(f"\nError: {key_var} not set in environment.")
         print("Please check your .env file or environment variables.")
         return
-        
-    api_key = os.environ.get(api_key_var) if api_key_var else None
-    model = os.environ.get(config["model_var"], config["default_model"])
-    
-    print(f"\nInitializing {config['name']} with model: {model}")
-    
-    # 3. Run Chunking
+
+    print(f"\nUsing: {provider_id} / {model}")
+
     try:
         chunker = LumberChunker(
             provider=provider_id,
             api_key=api_key,
-            model=model
+            model=model,
         )
-        
-        print("Chunking sample text...")
-        chunks = chunker.chunk(SAMPLE_TEXT)
-        
-        # 4. Show Results
-        print(f"\nCreated {len(chunks)} chunks:")
+
+        # Chunk and save — the library handles file output
+        output_file = f"chunks_{provider_id}.txt"
+        chunks = chunker.chunk(SAMPLE_TEXT, output_path=output_file)
+
+        # Show results
+        print(f"\nCreated {len(chunks)} chunks (saved to {output_file}):")
         for i, chunk in enumerate(chunks):
-            # Create a short preview of the chunk content
             content = chunk['text'] if isinstance(chunk, dict) else chunk
-            preview = content[:80].replace('\n', ' ') + "..." if len(content) > 80 else content
+            preview = content[:80].replace('\n', ' ')
+            if len(content) > 80:
+                preview += "..."
             print(f"  {i+1}: {preview}")
-            
-        save_chunks(chunks, provider_id)
-        
+
     except Exception as e:
-        print(f"\nError occurred: {e}")
+        print(f"\nError: {e}")
         if provider_id == "ollama":
             print("Tip: Ensure Ollama is running ('ollama serve') and the model has been pulled.")
+
 
 if __name__ == "__main__":
     main()

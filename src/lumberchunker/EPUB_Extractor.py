@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import logging
 import os
 import re
 import sys
@@ -15,19 +16,10 @@ from typing import Any, Iterable, List, Optional
 import warnings
 from pydantic import BaseModel
 
-# Import progress tracker
-try:
-    from progress_tracker import ProgressTracker
-except ImportError:
-    # Try adding current directory to path
-    import sys
-    import os
-    sys.path.insert(0, os.path.dirname(__file__))
-    try:
-        from progress_tracker import ProgressTracker
-    except ImportError:
-        # Fallback if running standalone
-        ProgressTracker = None
+logger = logging.getLogger(__name__)
+
+# progress_tracker is only available in the web interface; always None in library mode
+ProgressTracker = None
 
 #
 
@@ -551,6 +543,15 @@ def _set_extraction_provider(provider):
 	_extraction_provider = provider
 
 
+def _get_provider_usage_dict() -> dict:
+	"""Return the extraction provider's usage stats as a dict, or empty dict."""
+	try:
+		prov = _get_extraction_provider()
+		return prov.usage.to_dict()
+	except Exception:
+		return {}
+
+
 class NarrativeCheckResult(BaseModel):
 	"""Result of checking if a section is narrative content."""
 	href: str
@@ -582,6 +583,11 @@ def _call_llm_json(system: str, user: str, response_model: type[BaseModel]) -> B
 		response_text = provider.generate(full_prompt)
 	except Exception as e:
 		raise RuntimeError(f"LLM call failed: {e}")
+
+	# Log per-call token usage
+	u = provider.usage
+	logger.debug(f"[TOKENS] in={u.last_input_tokens}  out={u.last_output_tokens}  "
+	             f"(cumulative: {u.prompt_count} calls, {u.total_tokens} total tokens)")
 	
 	# Parse JSON from response
 	# Try to extract JSON from the response (handle markdown code blocks)
@@ -822,13 +828,13 @@ def _clean_records_with_llm(records: List[dict], model: str, tracker=None) -> Li
 	out: List[dict] = []
 	total_records = len(records)
 	
-	print("START_CLEANING=TRUE")  # Flag for web interface
+	logger.debug("START_CLEANING=TRUE")  # Flag for web interface
 	sys.stdout.flush()
 	if tracker:
 		tracker.set_chapter_cleaning_progress(0, total_records)
 	time.sleep(0.5)  # Give web interface time to process
 	
-	print(f"Aligning chapter starts: 0/{total_records} (0%)")
+	logger.info(f"Aligning chapter starts: 0/{total_records} (0%)")
 	sys.stdout.flush()
 	
 	for i, rec in enumerate(records):
@@ -836,7 +842,7 @@ def _clean_records_with_llm(records: List[dict], model: str, tracker=None) -> Li
 		completed = i
 		progress_pct = int((completed / total_records) * 100) if total_records > 0 else 0
 		progress_line = f"Aligning chapter starts: {completed}/{total_records} ({progress_pct}%)"
-		print(progress_line)
+		logger.info(progress_line)
 		sys.stdout.flush()
 		
 		if tracker:
@@ -863,7 +869,7 @@ def _clean_records_with_llm(records: List[dict], model: str, tracker=None) -> Li
 		completed = i + 1
 		progress_pct = int((completed / total_records) * 100)
 		progress_line = f"Aligning chapter starts: {completed}/{total_records} ({progress_pct}%)"
-		print(progress_line)
+		logger.info(progress_line)
 		sys.stdout.flush()
 		
 		if tracker:
@@ -871,10 +877,22 @@ def _clean_records_with_llm(records: List[dict], model: str, tracker=None) -> Li
 		
 		time.sleep(0.2)  # Additional delay to allow UI to update progressively
 	
-	print("END_CLEANING=TRUE")  # Flag for web interface
+	logger.debug("END_CLEANING=TRUE")  # Flag for web interface
 	sys.stdout.flush()
 	if tracker:
 		tracker.set_chapter_cleaning_progress(total_records, total_records, done=True)
+
+	# Log cleaning usage summary
+	try:
+		prov = _get_extraction_provider()
+		u = prov.usage
+		logger.info(f"Chapter cleaning done — {total_records} chapters, "
+		            f"{u.prompt_count} LLM calls, "
+		            f"{u.total_input_tokens:,} in / {u.total_output_tokens:,} out / "
+		            f"{u.total_tokens:,} total tokens")
+	except Exception:
+		pass
+
 	return out
 
 
@@ -883,7 +901,7 @@ def _preprocess_records_collapse_newlines(records: List[dict]) -> List[dict]:
 
 	- Normalize CRLF/CR to LF.
 	- Strip trailing spaces/tabs at line ends.
-	- Collapse runs of 2+ newlines to a single newline.
+	- Collapse runs of 3+ newlines to a double newline (preserving paragraph boundaries).
 	- Trim leading/trailing whitespace of the whole text.
 	"""
 	out: List[dict] = []
@@ -893,7 +911,7 @@ def _preprocess_records_collapse_newlines(records: List[dict]) -> List[dict]:
 		if t:
 			t = t.replace("\r\n", "\n").replace("\r", "\n")
 			t = "\n".join(ln.rstrip() for ln in t.split("\n"))
-			t = re.sub(r"\n{2,}", "\n", t)
+			t = re.sub(r"\n{3,}", "\n\n", t)
 			t = t.strip()
 			new_rec["text"] = t
 		out.append(new_rec)
@@ -1001,6 +1019,14 @@ async def _is_valid_narrative_section(section: Section, epub_path: str, model: s
 	
 	try:
 		res_obj: NarrativeCheckResult = _call_llm_json(system, user, NarrativeCheckResult)
+		# Use actual tokens from provider if available, else fall back to estimate
+		try:
+			prov = _get_extraction_provider()
+			actual = prov.usage.last_input_tokens + prov.usage.last_output_tokens
+			if actual > 0:
+				tokens_used = actual
+		except Exception:
+			pass
 		return res_obj.is_narrative, tokens_used
 	except Exception:
 		# Fallback: conservative approach - assume it's narrative if we can't determine
@@ -1017,13 +1043,13 @@ async def run_boundary_detection(epub_path: str, model: str, tracker=None) -> di
 	# Sort sections by order
 	sorted_sections = sorted(sections, key=lambda x: x.order)
 	
-	print(f"Found {len(sorted_sections)} sections total")
+	logger.info(f"Found {len(sorted_sections)} sections total")
 	
 	if tracker:
 		tracker.set_top_boundary_progress(0)
 	
 	# Pre-filter: Remove all sections with less than 100 tokens
-	print("Pre-filtering short sections...")
+	logger.info("Pre-filtering short sections...")
 	substantial_sections = []
 	dropped_short = []
 	
@@ -1059,9 +1085,9 @@ async def run_boundary_detection(epub_path: str, model: str, tracker=None) -> di
 			substantial_sections.append(section)
 		else:
 			dropped_short.append(section)
-			print(f"  ✗ Dropped (too short): {section.title} ({len(text_tokens)} tokens)")
+			logger.debug(f"  ✗ Dropped (too short): {section.title} ({len(text_tokens)} tokens)")
 	
-	print(f"After pre-filtering: {len(substantial_sections)} substantial sections, {len(dropped_short)} short sections dropped")
+	logger.info(f"After pre-filtering: {len(substantial_sections)} substantial sections, {len(dropped_short)} short sections dropped")
 	
 	if not substantial_sections:
 		return {"kept_sections": [], "dropped": [s.href for s in sorted_sections], "error": "No substantial sections found"}
@@ -1073,18 +1099,18 @@ async def run_boundary_detection(epub_path: str, model: str, tracker=None) -> di
 	end_index = None
 	total_tokens = 0
 	
-	print(f"Searching for narrative boundaries in {len(substantial_sections)} substantial sections...")
+	logger.info(f"Searching for narrative boundaries in {len(substantial_sections)} substantial sections...")
 	sys.stdout.flush()
-	print(f"Will check up to {max_check_per_side} sections from each side")
+	logger.debug(f"Will check up to {max_check_per_side} sections from each side")
 	sys.stdout.flush()
 	
 	# Search top-to-bottom for first valid section
 	# Need TWO consecutive narrative sections to confirm start boundary
-	print("START_TOP=TRUE")  # Flag for web interface
+	logger.debug("START_TOP=TRUE")  # Flag for web interface
 	sys.stdout.flush()
 	await asyncio.sleep(0.5)  # Give web interface time to process
 	
-	print("Searching top-to-bottom for start boundary...")
+	logger.info("Searching top-to-bottom for start boundary...")
 	sys.stdout.flush()
 	consecutive_narrative = 0
 	for i, section in enumerate(substantial_sections[:max_check_per_side]):
@@ -1092,34 +1118,34 @@ async def run_boundary_detection(epub_path: str, model: str, tracker=None) -> di
 			progress = int((i / min(max_check_per_side, len(substantial_sections))) * 100)
 			tracker.set_top_boundary_progress(progress)
 		
-		print(f"  Checking section {i+1}: {section.title}")
+		logger.info(f"  Checking section {i+1}: {section.title}")
 		sys.stdout.flush()
 		is_narrative, tokens_used = await _is_valid_narrative_section(section, epub_path, model)
 		total_tokens += tokens_used
 		
 		if is_narrative:
 			consecutive_narrative += 1
-			print(f"  ✓ Narrative: {section.title} (consecutive: {consecutive_narrative})")
+			logger.info(f"  ✓ Narrative: {section.title} (consecutive: {consecutive_narrative})")
 			sys.stdout.flush()
 			
 			if consecutive_narrative >= 2:
 				# Found two consecutive narrative sections, use the first one as start
 				start_index = i - 1  # Use the previous section as the start
-				print(f"  ✓ Confirmed start boundary at section {start_index+1}: {substantial_sections[start_index].title}")
+				logger.info(f"  ✓ Confirmed start boundary at section {start_index+1}: {substantial_sections[start_index].title}")
 				sys.stdout.flush()
 				break
 		else:
 			consecutive_narrative = 0  # Reset counter
-			print(f"  ✗ Not narrative: {section.title}")
+			logger.info(f"  ✗ Not narrative: {section.title}")
 			sys.stdout.flush()
 	
 	# If we only found one narrative section at the end, use it
 	if start_index is None and consecutive_narrative == 1:
 		start_index = min(max_check_per_side - 1, len(substantial_sections) - 1)
-		print(f"  ✓ Using single narrative section as start: {substantial_sections[start_index].title}")
+		logger.info(f"  ✓ Using single narrative section as start: {substantial_sections[start_index].title}")
 		sys.stdout.flush()
 	
-	print("END_TOP=TRUE")  # Flag for web interface
+	logger.debug("END_TOP=TRUE")  # Flag for web interface
 	sys.stdout.flush()
 	if tracker:
 		tracker.set_top_boundary_progress(100, done=True)
@@ -1127,13 +1153,13 @@ async def run_boundary_detection(epub_path: str, model: str, tracker=None) -> di
 	
 	# Search bottom-to-top for last valid section
 	# Need TWO consecutive narrative sections to confirm end boundary
-	print("START_BOTTOM=TRUE")  # Flag for web interface
+	logger.debug("START_BOTTOM=TRUE")  # Flag for web interface
 	sys.stdout.flush()
 	if tracker:
 		tracker.set_bottom_boundary_progress(0)
 	await asyncio.sleep(0.5)  # Give web interface time to process
 	
-	print("Searching bottom-to-top for end boundary...")
+	logger.info("Searching bottom-to-top for end boundary...")
 	sys.stdout.flush()
 	consecutive_narrative = 0
 	bottom_sections = substantial_sections[-max_check_per_side:]
@@ -1142,35 +1168,35 @@ async def run_boundary_detection(epub_path: str, model: str, tracker=None) -> di
 			progress = int((i / min(max_check_per_side, len(bottom_sections))) * 100)
 			tracker.set_bottom_boundary_progress(progress)
 		
-		print(f"  Checking section from end {i+1}: {section.title}")
+		logger.info(f"  Checking section from end {i+1}: {section.title}")
 		sys.stdout.flush()
 		is_narrative, tokens_used = await _is_valid_narrative_section(section, epub_path, model)
 		total_tokens += tokens_used
 		
 		if is_narrative:
 			consecutive_narrative += 1
-			print(f"  ✓ Narrative: {section.title} (consecutive: {consecutive_narrative})")
+			logger.info(f"  ✓ Narrative: {section.title} (consecutive: {consecutive_narrative})")
 			sys.stdout.flush()
 			
 			if consecutive_narrative >= 2:
 				# Found two consecutive narrative sections, use the second one as end
 				end_index = len(substantial_sections) - i  # Use the next section as the end
-				print(f"  ✓ Confirmed end boundary: {substantial_sections[end_index].title}")
+				logger.info(f"  ✓ Confirmed end boundary: {substantial_sections[end_index].title}")
 				sys.stdout.flush()
 				break
 		else:
 			consecutive_narrative = 0  # Reset counter
-			print(f"  ✗ Not narrative: {section.title}")
+			logger.info(f"  ✗ Not narrative: {section.title}")
 			sys.stdout.flush()
 	
 	# If we only found one narrative section at the end, use it
 	if end_index is None and consecutive_narrative == 1:
 		reverse_index = min(max_check_per_side - 1, len(substantial_sections) - 1)
 		end_index = len(substantial_sections) - 1 - reverse_index
-		print(f"  ✓ Using single narrative section as end: {substantial_sections[end_index].title}")
+		logger.info(f"  ✓ Using single narrative section as end: {substantial_sections[end_index].title}")
 		sys.stdout.flush()
 	
-	print("END_BOTTOM=TRUE")  # Flag for web interface
+	logger.debug("END_BOTTOM=TRUE")  # Flag for web interface
 	sys.stdout.flush()
 	if tracker:
 		tracker.set_bottom_boundary_progress(100, done=True)
@@ -1178,10 +1204,10 @@ async def run_boundary_detection(epub_path: str, model: str, tracker=None) -> di
 	
 	# If we couldn't find boundaries, fall back to keeping everything substantial
 	if start_index is None:
-		print("Warning: No start boundary found, using first substantial section")
+		logger.warning("No start boundary found, using first substantial section")
 		start_index = 0
 	if end_index is None:
-		print("Warning: No end boundary found, using last substantial section")
+		logger.warning("No end boundary found, using last substantial section")
 		end_index = len(substantial_sections) - 1
 	
 	# Extract sections between boundaries (inclusive)
@@ -1210,12 +1236,23 @@ async def run_boundary_detection(epub_path: str, model: str, tracker=None) -> di
 	# Add sections outside boundaries
 	dropped_hrefs.extend([s.href for i, s in enumerate(substantial_sections) if i < start_index or i > end_index])
 	
+	# Log boundary detection usage summary
+	pu = _get_provider_usage_dict()
+	if pu.get("prompt_count"):
+		logger.info(
+			f"Boundary detection done — {pu['prompt_count']} LLM calls, "
+			f"{pu.get('total_input_tokens', 0):,} in / "
+			f"{pu.get('total_output_tokens', 0):,} out / "
+			f"{pu.get('total_tokens', 0):,} total tokens"
+		)
+
 	return {
 		"kept_sections": [ks.model_dump() for ks in kept_sections],
 		"dropped": dropped_hrefs,
 		"start_boundary": substantial_sections[start_index].title if start_index is not None else None,
 		"end_boundary": substantial_sections[end_index].title if end_index is not None else None,
-		"tokens_used": total_tokens
+		"tokens_used": total_tokens,
+		"provider_usage": _get_provider_usage_dict(),
 	}
 
 
@@ -1389,7 +1426,7 @@ def main(argv: Optional[List[str]] = None, job_id: Optional[str] = None) -> int:
 		tracker.update_overall_progress(0)
 	
 	if not os.path.exists(epub_path):
-		print(f"Error: File not found: {epub_path}")
+		logger.error(f"File not found: {epub_path}")
 		if tracker:
 			tracker.set_error(f"File not found: {epub_path}")
 		return 2
@@ -1407,7 +1444,7 @@ def main(argv: Optional[List[str]] = None, job_id: Optional[str] = None) -> int:
 		# Quick dependency check
 		_ensure_deps()
 	except RuntimeError as e:
-		print(str(e))
+		logger.error(str(e))
 		return 3
 
 	# Run the boundary detection
@@ -1417,7 +1454,7 @@ def main(argv: Optional[List[str]] = None, job_id: Optional[str] = None) -> int:
 			tracker.update_overall_progress(10)
 		parsed = asyncio.run(run_boundary_detection(epub_path, args.model, tracker))
 	except Exception as e:
-		print(f"Boundary detection failed: {e}")
+		logger.error(f"Boundary detection failed: {e}")
 		if tracker:
 			tracker.set_error(f"Boundary detection failed: {e}")
 		return 4
@@ -1436,9 +1473,9 @@ def main(argv: Optional[List[str]] = None, job_id: Optional[str] = None) -> int:
 		
 		# Print boundary detection results
 		if "start_boundary" in parsed and parsed["start_boundary"]:
-			print(f"Start boundary: {parsed['start_boundary']}")
+			logger.info(f"Start boundary: {parsed['start_boundary']}")
 		if "end_boundary" in parsed and parsed["end_boundary"]:
-			print(f"End boundary: {parsed['end_boundary']}")
+			logger.info(f"End boundary: {parsed['end_boundary']}")
 
 	# Build KeptSection list from parsed for extraction
 	kept_objs: List[KeptSection] = []
@@ -1454,7 +1491,7 @@ def main(argv: Optional[List[str]] = None, job_id: Optional[str] = None) -> int:
 	try:
 		import pandas as pd  # type: ignore
 	except Exception:
-		print("Error: pandas is required to save the chapters dataframe. Install with: pip install pandas")
+		logger.error("pandas is required to save the chapters dataframe. Install with: pip install pandas")
 		return 5
 	
 	records = _extract_texts_for_sections(epub_path, kept_objs)
@@ -1487,7 +1524,7 @@ def main(argv: Optional[List[str]] = None, job_id: Optional[str] = None) -> int:
 				# openpyxl is the usual writer; if missing, instruct the user
 				import openpyxl  # type: ignore  # noqa: F401
 			except Exception:
-				print("Warning: openpyxl not found; attempting to write .xlsx may fail. Install with: pip install openpyxl")
+				logger.warning("openpyxl not found; attempting to write .xlsx may fail. Install with: pip install openpyxl")
 			df.to_excel(out_path, index=False)
 		elif ext == ".csv":
 			df.to_csv(out_path, index=False)
@@ -1504,13 +1541,13 @@ def main(argv: Optional[List[str]] = None, job_id: Optional[str] = None) -> int:
 			except Exception:
 				pass
 			df.to_excel(out_path if out_path.endswith('.xlsx') else out_path + '.xlsx', index=False)
-		print(f"\nSaved chapters dataframe to: {out_path}")
+		logger.info(f"Saved chapters dataframe to: {out_path}")
 		if tracker:
 			tracker.set_completed()
 		# Final printed output: final kept list and dropped section names
-		print("\nFinal kept sections:")
+		logger.info("Final kept sections:")
 		for i, row in enumerate(df.itertuples(index=False), start=1):
-			print(f"{i:02d}. {getattr(row, 'Chapter')}")
+			logger.info(f"{i:02d}. {getattr(row, 'Chapter')}")
 
 		# Map first-step dropped hrefs to titles for interpretability
 		dropped_names: list[str] = []
@@ -1528,11 +1565,20 @@ def main(argv: Optional[List[str]] = None, job_id: Optional[str] = None) -> int:
 		# 	for name in dropped_names:
 		# 		print(f"- {name}")
 
-		# Token usage from boundary detection
+		# Token usage summary
 		boundary_tokens = parsed.get("tokens_used", 0) if isinstance(parsed, dict) else 0
-		print(f"\nEstimated tokens — boundary detection: {boundary_tokens}, total: {boundary_tokens}")
+		pu = parsed.get("provider_usage", {}) if isinstance(parsed, dict) else {}
+		if pu.get("prompt_count"):
+			logger.info(
+				f"LLM usage: {pu['prompt_count']} prompts, "
+				f"{pu.get('total_input_tokens', 0):,} input tokens, "
+				f"{pu.get('total_output_tokens', 0):,} output tokens, "
+				f"{pu.get('total_tokens', 0):,} total tokens"
+			)
+		else:
+			logger.info(f"Estimated tokens — boundary detection: {boundary_tokens}")
 	except Exception as e:
-		print(f"Failed to save chapters dataframe: {e}")
+		logger.error(f"Failed to save chapters dataframe: {e}")
 		return 6
 
 	return 0

@@ -211,6 +211,152 @@ def read_file_or_epub(file_path: Union[str, Path]) -> str:
             return f.read()
 
 
+def epub_to_chapters_simple(epub_path: Union[str, Path]) -> List[dict]:
+    """
+    Extract chapters from an EPUB using its Table of Contents structure.
+    
+    This function does NOT require an LLM — it uses the EPUB's built-in TOC
+    to identify chapters and extract their text content. This is the recommended
+    approach for most EPUBs with well-structured tables of contents.
+    
+    For EPUBs with poor/missing TOC structure, or when you need automatic
+    front/back matter removal, use ``epub_to_chapters()`` instead (requires LLM).
+    
+    Args:
+        epub_path: Path to the EPUB file.
+        
+    Returns:
+        List of dicts, each with:
+        - 'chapter': Chapter title (str)
+        - 'text': Chapter content as plain text (str)
+        
+    Raises:
+        ImportError: If ebooklib or beautifulsoup4 are not installed.
+        FileNotFoundError: If the EPUB file doesn't exist.
+        
+    Example:
+        >>> chapters = epub_to_chapters_simple("book.epub")
+        >>> for ch in chapters:
+        ...     print(f"{ch['chapter']}: {len(ch['text'].split())} words")
+    """
+    try:
+        import ebooklib
+        from ebooklib import epub
+    except ImportError:
+        raise ImportError(
+            "ebooklib is required for EPUB support. "
+            "Install it with: pip install ebooklib"
+        )
+    
+    try:
+        from bs4 import BeautifulSoup
+    except ImportError:
+        raise ImportError(
+            "beautifulsoup4 is required for EPUB support. "
+            "Install it with: pip install beautifulsoup4"
+        )
+    
+    import warnings
+    
+    path = Path(epub_path)
+    if not path.exists():
+        raise FileNotFoundError(f"EPUB file not found: {epub_path}")
+    
+    warnings.filterwarnings("ignore", category=UserWarning, module=r"ebooklib.*")
+    warnings.filterwarnings("ignore", category=FutureWarning, module=r"ebooklib.*")
+    
+    book = epub.read_epub(str(path))
+    
+    chapters = []
+    seen_hrefs = set()  # Avoid duplicate content from same file
+    
+    def _extract_text_from_item(item) -> str:
+        """Extract clean text from an EPUB document item."""
+        soup = BeautifulSoup(item.get_content(), 'html.parser')
+        
+        # Remove scripts and styles
+        for tag in soup.find_all(['script', 'style']):
+            tag.decompose()
+        
+        # Extract text preserving paragraph structure
+        text_parts = []
+        for element in soup.find_all(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'div', 'blockquote']):
+            text = element.get_text(strip=True)
+            if text:
+                text_parts.append(text)
+        
+        return '\n\n'.join(text_parts)
+    
+    def _process_link(link, parent_title=None):
+        """Extract chapter content from an epub.Link."""
+        href = link.href.split('#')[0]  # Remove fragment
+        if href in seen_hrefs:
+            return
+        seen_hrefs.add(href)
+        
+        item = book.get_item_with_href(href)
+        if item is None:
+            return
+        
+        text = _extract_text_from_item(item)
+        
+        # Skip very short sections (likely front/back matter artifacts)
+        if not text or len(text.split()) < 50:
+            return
+        
+        title = link.title or ""
+        if parent_title:
+            title = f"{parent_title} - {title}"
+        
+        chapters.append({
+            'chapter': title.strip(),
+            'text': text,
+        })
+    
+    def _process_toc(toc_items, parent_title=None):
+        """Recursively process TOC items."""
+        for item in toc_items:
+            if isinstance(item, epub.Link):
+                _process_link(item, parent_title)
+            elif isinstance(item, tuple) and len(item) >= 2:
+                section = item[0]
+                children = item[1]
+                section_title = getattr(section, 'title', None) or parent_title
+                
+                # If the section itself is a link with content, extract it
+                if isinstance(section, epub.Link):
+                    _process_link(section, parent_title)
+                
+                if children:
+                    _process_toc(children, section_title)
+    
+    # Process the EPUB's table of contents
+    toc = book.toc
+    if toc:
+        _process_toc(toc)
+    
+    # Fallback: if TOC yielded nothing, use spine order
+    if not chapters:
+        for item in book.get_items():
+            if item.get_type() == ebooklib.ITEM_DOCUMENT:
+                text = _extract_text_from_item(item)
+                
+                if not text or len(text.split()) < 50:
+                    continue
+                
+                # Try to extract title from headings
+                soup = BeautifulSoup(item.get_content(), 'html.parser')
+                heading = soup.find(['h1', 'h2', 'h3'])
+                title = heading.get_text(strip=True) if heading else item.get_name()
+                
+                chapters.append({
+                    'chapter': title,
+                    'text': text,
+                })
+    
+    return chapters
+
+
 def epub_to_chapters(
     epub_path: Union[str, Path],
     provider: Union[str, "BaseLLMProvider"] = "openai",
@@ -266,6 +412,7 @@ def epub_to_chapters(
             _preprocess_records_collapse_newlines,
             _clean_records_with_llm,
             _set_extraction_provider,
+            _split_into_paragraphs,
         )
     except ImportError as e:
         raise ImportError(
@@ -353,7 +500,21 @@ def epub_to_chapters(
         # Preprocess and clean records
         records = _preprocess_records_collapse_newlines(records)
         records = _clean_records_with_llm(records, model or "", tracker=None)
-        
+
+        # Regenerate text_with_ids from cleaned text since cleaning trims
+        # the text to start at the opening sentence, making old IDs stale
+        for record in records:
+            cleaned_text = record.get("text", "")
+            paras = _split_into_paragraphs(cleaned_text)
+            paragraphs_with_ids = []
+            paragraph_id_mapping = []
+            for idx, para in enumerate(paras):
+                if para.strip():
+                    paragraphs_with_ids.append(f"ID {idx}: {para}")
+                    paragraph_id_mapping.append((idx, para))
+            record["text_with_ids"] = "\n\n".join(paragraphs_with_ids)
+            record["paragraph_id_mapping"] = paragraph_id_mapping
+
         # Build simplified output
         chapters = [
             {
