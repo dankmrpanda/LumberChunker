@@ -30,6 +30,7 @@ class OpenAIProvider(BaseLLMProvider):
         temperature: float = 0.1,
         max_retries: int = 3,
         retry_delay: float = 60.0,
+        timeout: float = 120.0,
     ):
         """
         Initialize the OpenAI provider.
@@ -40,12 +41,14 @@ class OpenAIProvider(BaseLLMProvider):
             temperature: Sampling temperature (0.0-1.0).
             max_retries: Maximum retry attempts on failure.
             retry_delay: Delay in seconds between retries.
+            timeout: HTTP request timeout in seconds (default: 120).
         """
         super().__init__(
             model=model or self.DEFAULT_MODEL,
             temperature=temperature,
             max_retries=max_retries,
             retry_delay=retry_delay,
+            timeout=timeout,
         )
         
         self.api_key = api_key or os.environ.get("OPENAI_API_KEY")
@@ -61,7 +64,7 @@ class OpenAIProvider(BaseLLMProvider):
         """Lazily initialize the OpenAI client."""
         if self._client is None:
             from openai import OpenAI
-            self._client = OpenAI(api_key=self.api_key)
+            self._client = OpenAI(api_key=self.api_key, timeout=self.timeout)
         return self._client
     
     def generate(self, prompt: str, system_prompt: Optional[str] = None) -> str:

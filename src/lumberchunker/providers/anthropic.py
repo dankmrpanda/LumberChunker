@@ -31,6 +31,7 @@ class AnthropicProvider(BaseLLMProvider):
         max_tokens: int = 4096,
         max_retries: int = 3,
         retry_delay: float = 60.0,
+        timeout: float = 120.0,
     ):
         """
         Initialize the Anthropic provider.
@@ -42,12 +43,14 @@ class AnthropicProvider(BaseLLMProvider):
             max_tokens: Maximum tokens in the response.
             max_retries: Maximum retry attempts on failure.
             retry_delay: Delay in seconds between retries.
+            timeout: HTTP request timeout in seconds (default: 120).
         """
         super().__init__(
             model=model or self.DEFAULT_MODEL,
             temperature=temperature,
             max_retries=max_retries,
             retry_delay=retry_delay,
+            timeout=timeout,
         )
         
         self.api_key = api_key or os.environ.get("ANTHROPIC_API_KEY")
@@ -65,7 +68,7 @@ class AnthropicProvider(BaseLLMProvider):
         """Lazily initialize the Anthropic client."""
         if self._client is None:
             import anthropic
-            self._client = anthropic.Anthropic(api_key=self.api_key)
+            self._client = anthropic.Anthropic(api_key=self.api_key, timeout=self.timeout)
         return self._client
     
     def generate(self, prompt: str, system_prompt: Optional[str] = None) -> str:

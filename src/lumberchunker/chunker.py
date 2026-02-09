@@ -74,6 +74,7 @@ class LumberChunker:
         model: Optional[str] = None,
         target_chunk_tokens: int = 550,
         temperature: float = 0.1,
+        timeout: float = 120.0,
         verbose: bool = True,
     ):
         """
@@ -86,6 +87,7 @@ class LumberChunker:
             model: Model name to use. If None, uses provider default.
             target_chunk_tokens: Target token count per chunk window (default: 550).
             temperature: LLM sampling temperature (default: 0.1).
+            timeout: HTTP request timeout in seconds (default: 120).
             verbose: If True, print progress to stdout (default: True).
         """
         self.target_chunk_tokens = target_chunk_tokens
@@ -120,7 +122,7 @@ class LumberChunker:
             provider_class = self.SUPPORTED_PROVIDERS[provider_name]
             
             # Build provider kwargs
-            kwargs = {"temperature": temperature}
+            kwargs = {"temperature": temperature, "timeout": timeout}
             if model:
                 kwargs["model"] = model
             if api_key:
@@ -168,6 +170,9 @@ class LumberChunker:
         log_path = Path(log_path)
         log_path.parent.mkdir(parents=True, exist_ok=True)
         self._log_fh = open(log_path, "w", encoding="utf-8")
+        
+        # Log model information at the top of the file
+        self._log(f"Model: {self._provider.model}")
 
     def _close_log(self):
         """Close the log file if open."""

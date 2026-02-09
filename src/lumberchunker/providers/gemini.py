@@ -30,6 +30,7 @@ class GeminiProvider(BaseLLMProvider):
         temperature: float = 0.1,
         max_retries: int = 3,
         retry_delay: float = 60.0,
+        timeout: float = 120.0,
     ):
         """
         Initialize the Gemini provider.
@@ -40,12 +41,14 @@ class GeminiProvider(BaseLLMProvider):
             temperature: Sampling temperature (0.0-1.0).
             max_retries: Maximum retry attempts on failure.
             retry_delay: Delay in seconds between retries.
+            timeout: HTTP request timeout in seconds (default: 120).
         """
         super().__init__(
             model=model or self.DEFAULT_MODEL,
             temperature=temperature,
             max_retries=max_retries,
             retry_delay=retry_delay,
+            timeout=timeout,
         )
         
         self.api_key = api_key or os.environ.get("GEMINI_API_KEY")
@@ -62,7 +65,9 @@ class GeminiProvider(BaseLLMProvider):
         """Lazily initialize the Gemini client."""
         if self._client is None:
             from google import genai
-            self._client = genai.Client(api_key=self.api_key)
+            from google.genai import types as genai_types
+            http_options = genai_types.HttpOptions(timeout=int(self.timeout * 1000))
+            self._client = genai.Client(api_key=self.api_key, http_options=http_options)
         return self._client
     
     def generate(self, prompt: str, system_prompt: Optional[str] = None) -> str:

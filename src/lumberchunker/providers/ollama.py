@@ -31,6 +31,7 @@ class OllamaProvider(BaseLLMProvider):
         temperature: float = 0.1,
         max_retries: int = 3,
         retry_delay: float = 60.0,
+        timeout: float = 120.0,
     ):
         """
         Initialize the Ollama provider.
@@ -41,12 +42,14 @@ class OllamaProvider(BaseLLMProvider):
             temperature: Sampling temperature (0.0-1.0).
             max_retries: Maximum retry attempts on failure.
             retry_delay: Delay in seconds between retries.
+            timeout: HTTP request timeout in seconds (default: 120).
         """
         super().__init__(
             model=model or self.DEFAULT_MODEL,
             temperature=temperature,
             max_retries=max_retries,
             retry_delay=retry_delay,
+            timeout=timeout,
         )
         
         self.host = host or os.environ.get("OLLAMA_HOST", self.DEFAULT_HOST)
@@ -56,7 +59,11 @@ class OllamaProvider(BaseLLMProvider):
         """Lazily initialize the Ollama client."""
         if self._client is None:
             import ollama
-            self._client = ollama.Client(host=self.host)
+            import httpx
+            self._client = ollama.Client(
+                host=self.host,
+                timeout=httpx.Timeout(self.timeout),
+            )
         return self._client
     
     def generate(self, prompt: str, system_prompt: Optional[str] = None) -> str:

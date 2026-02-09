@@ -78,6 +78,7 @@ class BaseLLMProvider(ABC):
         temperature: float = 0.1,
         max_retries: int = 3,
         retry_delay: float = 60.0,
+        timeout: float = 120.0,
     ):
         """
         Initialize the base LLM provider.
@@ -87,11 +88,13 @@ class BaseLLMProvider(ABC):
             temperature: Sampling temperature (0.0-1.0). Lower is more deterministic.
             max_retries: Maximum number of retry attempts on failure.
             retry_delay: Delay in seconds between retries.
+            timeout: HTTP request timeout in seconds (default: 120).
         """
         self.model = model
         self.temperature = temperature
         self.max_retries = max_retries
         self.retry_delay = retry_delay
+        self.timeout = timeout
         self.usage = UsageStats()
     
     @abstractmethod

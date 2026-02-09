@@ -74,12 +74,34 @@ def remove_ids_from_chunks(chunks: List[str]) -> List[str]:
     return [re.sub(pattern, '', chunk) for chunk in chunks]
 
 
+def _strip_thinking_blocks(text: str) -> str:
+    """
+    Strip reasoning/thinking blocks emitted by reasoning models.
+    
+    Models like qwen3, deepseek-r1, etc. wrap their chain-of-thought in
+    ``<think>...</think>`` tags.  These blocks may reference paragraph IDs
+    from the input, which would confuse the answer parser.
+    
+    Args:
+        text: Raw LLM response that may contain thinking blocks.
+        
+    Returns:
+        The response with thinking blocks removed.
+    """
+    return re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL | re.IGNORECASE).strip()
+
+
 def extract_id_from_response(response: str) -> int:
     """
     Extract the paragraph ID from an LLM response.
     
     The response should contain "Answer: ID XXXX" format.
-    Also attempts to find just "ID XXXX" if the strict format is missing.
+    Falls back through progressively looser patterns if the strict
+    format is not found.
+    
+    Reasoning/thinking blocks (``<think>...</think>``) are stripped
+    before parsing so that IDs mentioned during chain-of-thought
+    do not produce false matches.
     
     Args:
         response: The LLM response text.
@@ -87,22 +109,24 @@ def extract_id_from_response(response: str) -> int:
     Returns:
         The extracted ID number, or -1 if not found.
     """
+    # Strip <think>...</think> blocks from reasoning models
+    cleaned = _strip_thinking_blocks(response)
+    
     # 1. Try strict format: "Answer: ID XXXX"
-    pattern = r"Answer: ID \w+"
-    match = re.search(pattern, response, re.IGNORECASE)
-    
+    pattern = r"Answer:\s*ID\s+(\d+)"
+    match = re.search(pattern, cleaned, re.IGNORECASE)
     if match:
-        id_text = match.group(0)
-        id_pattern = r'\d+'
-        id_match = re.search(id_pattern, id_text)
-        if id_match:
-            return int(id_match.group())
-            
-    # 2. Fallback: Look for any "ID XXXX" occurrence
-    # We prioritize IDs appearing at the start of a line or sentence help
+        return int(match.group(1))
+
+    # 2. Try "Answer: XXXX" (number without "ID" prefix)
+    pattern_no_id = r"Answer:\s*(\d+)"
+    match = re.search(pattern_no_id, cleaned, re.IGNORECASE)
+    if match:
+        return int(match.group(1))
+
+    # 3. Fallback: Look for any "ID XXXX" occurrence in the cleaned text
     pattern_loose = r"ID\s*(\d+)"
-    match = re.search(pattern_loose, response, re.IGNORECASE)
-    
+    match = re.search(pattern_loose, cleaned, re.IGNORECASE)
     if match:
         return int(match.group(1))
     
