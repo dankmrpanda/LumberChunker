@@ -240,10 +240,11 @@ def epub_to_chapters_simple(epub_path: Union[str, Path]) -> List[dict]:
     Extract chapters from an EPUB using its Table of Contents structure.
     
     This function does NOT require an LLM — it uses the EPUB's built-in TOC
-    to identify chapters and extract their text content. This is the recommended
-    approach for most EPUBs with well-structured tables of contents.
+    to identify chapters and extract their text content. It applies heuristic
+    filtering to remove common front/back matter (Contents, Copyright, etc.)
+    while being conservative to preserve narrative sections like Prologue/Epilogue.
     
-    For EPUBs with poor/missing TOC structure, or when you need automatic
+    For EPUBs with poor/missing TOC structure, or when you need more aggressive
     front/back matter removal, use ``epub_to_chapters()`` instead (requires LLM).
     
     Args:
@@ -294,6 +295,117 @@ def epub_to_chapters_simple(epub_path: Union[str, Path]) -> List[dict]:
     chapters = []
     seen_hrefs = set()  # Avoid duplicate content from same file
     
+    # --- Heuristic patterns for front/back matter detection ---
+    # These titles are ALWAYS excluded (non-narrative structural elements)
+    EXCLUDED_TITLES_EXACT = {
+        'contents', 'table of contents', 'toc', 'cover', 'title page',
+        'half title', 'half-title', 'halftitle', 'frontispiece',
+        'copyright', 'copyright page', 'legal', 'credits',
+        'dedication', 'epigraph', 'colophon',
+    }
+    
+    # Title patterns that suggest front/back matter (matched as substrings)
+    # These are excluded UNLESS the section has substantial narrative content
+    FRONT_BACK_MATTER_PATTERNS = [
+        'about the author', 'about author', 'author bio', 'biography',
+        'also by', 'other books by', 'books by', 'other works',
+        'acknowledgment', 'acknowledgement', 'thanks',
+        'note from', "author's note", "editor's note", 'publisher',
+        'index', 'glossary', 'bibliography', 'references', 'endnotes',
+        'appendix', 'supplement',
+        'preview', 'excerpt', 'sneak peek', 'coming soon',
+        'newsletter', 'subscribe', 'mailing list', 'connect with',
+        'discussion questions', 'reading group', 'book club',
+    ]
+    
+    # Patterns that indicate NARRATIVE content (never exclude these)
+    NARRATIVE_PATTERNS = [
+        'chapter', 'prologue', 'epilogue', 'part ', 'book ',
+        'volume', 'act ', 'scene', 'interlude', 'introduction',
+        'preface', 'foreword',  # Author context, but often narrative-adjacent
+    ]
+    
+    def _is_excluded_title(title: str) -> bool:
+        """Check if a title should be excluded based on heuristics."""
+        if not title:
+            return False
+        
+        title_lower = title.lower().strip()
+        
+        # Check exact matches first
+        if title_lower in EXCLUDED_TITLES_EXACT:
+            return True
+        
+        # If it matches a narrative pattern, NEVER exclude
+        for pattern in NARRATIVE_PATTERNS:
+            if pattern in title_lower:
+                return False
+        
+        # Check front/back matter patterns
+        for pattern in FRONT_BACK_MATTER_PATTERNS:
+            if pattern in title_lower:
+                return True
+        
+        return False
+    
+    def _looks_like_toc_content(text: str) -> bool:
+        """
+        Detect if text content looks like a table of contents rather than narrative.
+        
+        TOC pages often have very short lines/paragraphs that are just chapter titles.
+        """
+        if not text:
+            return False
+        
+        lines = [ln.strip() for ln in text.split('\n') if ln.strip()]
+        if len(lines) < 3:
+            return False
+        
+        # Count how many lines are very short (likely TOC entries)
+        short_lines = sum(1 for ln in lines if len(ln.split()) <= 5)
+        
+        # If >70% of lines are very short, it's probably a TOC
+        if short_lines / len(lines) > 0.7:
+            # Additional check: does it contain chapter-like patterns?
+            text_lower = text.lower()
+            toc_indicators = ['chapter', 'part ', 'contents', 'prologue', 'epilogue']
+            indicator_count = sum(1 for ind in toc_indicators if ind in text_lower)
+            # If it has multiple chapter references in short-line format, it's a TOC
+            if indicator_count >= 3:
+                return True
+        
+        return False
+    
+    def _looks_like_credits_or_list(text: str) -> bool:
+        """
+        Detect if text is primarily a list of book titles or credits.
+        
+        "Other Books By" and credits pages are often lists with minimal prose.
+        """
+        if not text:
+            return False
+        
+        lines = [ln.strip() for ln in text.split('\n') if ln.strip()]
+        if len(lines) < 5:
+            return False
+        
+        # Check for repetitive patterns (title listings)
+        text_lower = text.lower()
+        
+        # Common indicators of book lists
+        book_list_indicators = [
+            'series', 'trilogy', 'novel', 'collection', 'anthology',
+            'volume', 'edition', 'hardcover', 'paperback', 'ebook',
+        ]
+        indicator_count = sum(text_lower.count(ind) for ind in book_list_indicators)
+        
+        # If many book-list indicators and mostly short lines, it's probably a list
+        short_lines = sum(1 for ln in lines if len(ln.split()) <= 6)
+        if indicator_count >= 5 and short_lines / len(lines) > 0.5:
+            return True
+        
+        return False
+    
     def _extract_text_from_item(item) -> str:
         """Extract clean text from an EPUB document item."""
         soup = BeautifulSoup(item.get_content(), 'html.parser')
@@ -323,14 +435,34 @@ def epub_to_chapters_simple(epub_path: Union[str, Path]) -> List[dict]:
             return
         
         text = _extract_text_from_item(item)
+        word_count = len(text.split()) if text else 0
         
         # Skip very short sections (likely front/back matter artifacts)
-        if not text or len(text.split()) < 50:
+        if not text or word_count < 50:
             return
         
         title = link.title or ""
         if parent_title:
             title = f"{parent_title} - {title}"
+        
+        # --- Apply heuristic filters ---
+        
+        # 1. Check if title is excluded
+        if _is_excluded_title(title):
+            # But allow if it has substantial content (>500 words) - might be a
+            # misnamed chapter or an author's note that's actually important
+            if word_count < 500:
+                return
+        
+        # 2. Check if content looks like a TOC page
+        if _looks_like_toc_content(text):
+            return
+        
+        # 3. Check if content looks like a book list / credits
+        if _looks_like_credits_or_list(text):
+            # Allow if very long (>1000 words) - might be actual content
+            if word_count < 1000:
+                return
         
         chapters.append({
             'chapter': title.strip(),
@@ -372,6 +504,18 @@ def epub_to_chapters_simple(epub_path: Union[str, Path]) -> List[dict]:
                 soup = BeautifulSoup(item.get_content(), 'html.parser')
                 heading = soup.find(['h1', 'h2', 'h3'])
                 title = heading.get_text(strip=True) if heading else item.get_name()
+                
+                # Apply same exclusion logic
+                if _is_excluded_title(title):
+                    if len(text.split()) < 500:
+                        continue
+                
+                if _looks_like_toc_content(text):
+                    continue
+                
+                if _looks_like_credits_or_list(text):
+                    if len(text.split()) < 1000:
+                        continue
                 
                 chapters.append({
                     'chapter': title,

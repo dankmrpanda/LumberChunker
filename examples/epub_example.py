@@ -132,7 +132,7 @@ def main():
             epub_path,
             output_dir="auto",        # auto-creates folder from EPUB filename
             chapters=chapter_filter,   # None = all, or list of ints/strings
-            use_llm_extraction=True,   # use LLM for accurate chapter detection
+            use_llm_extraction=False,   # use LLM for accurate chapter detection
         )
 
         # Summary

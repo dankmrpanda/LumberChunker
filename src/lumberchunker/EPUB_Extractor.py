@@ -614,7 +614,7 @@ def _call_llm_json(system: str, user: str, response_model: type[BaseModel]) -> B
 	try:
 		return response_model.model_validate_json(text)
 	except Exception as e:
-		raise RuntimeError(f"Failed to parse LLM response as JSON: {e}\nResponse: {response_text[:500]}")
+		raise RuntimeError(f"Failed to parse LLM response as JSON: {e}\nResponse: {response_text}")
 
 
 def _get_first_50_tokens(text: str) -> str:

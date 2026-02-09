@@ -353,7 +353,7 @@ class LumberChunker:
             self._log(f"\n{'='*60}")
             self._log(f"[LLM INPUT] Sending IDs {chunk_number} to {last_id_in_window} ({num_paras} paragraphs)")
             self._log(f"{'='*60}")
-            self._log(final_document[:500] + "..." if len(final_document) > 500 else final_document)
+            self._log(final_document)
             self._log(f"{'='*60}")
 
             # --- Step 5: Send to LLM ---
