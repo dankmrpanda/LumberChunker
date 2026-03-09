@@ -18,7 +18,7 @@ from pathlib import Path
 # ============================================================
 
 # Path to the EPUB file
-EPUB_FILE = Path(__file__).parent / "sources" / "epubs" / "Hands-On_Large_Language_Models_-_Jay_Alammar.epub"
+EPUB_FILE = Path(__file__).parent / "sources" / "epubs" / "Animal_Farm-George_Orwell.epub"
 
 # Provider: "gemini", "openai", "anthropic", or "ollama"
 PROVIDER = "gemini"

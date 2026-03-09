@@ -884,6 +884,7 @@ class LumberChunker:
                     provider=extraction_provider or self._provider,
                     api_key=extraction_api_key,
                     model=extraction_model,
+                    output_dir=out_dir,
                 )
             else:
                 all_chapters = epub_to_chapters_simple(epub_path)

@@ -12,6 +12,7 @@ import time
 import urllib.parse
 import html as html_module
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Iterable, List, Optional
 import warnings
 from pydantic import BaseModel
@@ -819,7 +820,13 @@ def _detect_opening_sentence_for_record(rec: dict, model: str) -> str:
 		return ""
 
 
-def _clean_records_with_llm(records: List[dict], model: str, tracker=None) -> List[dict]:
+def _clean_records_with_llm(
+	records: List[dict],
+	model: str,
+	tracker=None,
+	checkpoint_path: Optional[Path] = None,
+	epub_fingerprint: str = "",
+) -> List[dict]:
 	"""Align each record's text to start at the true opening sentence.
 
 	Adds 'opening_sentence' to each record and trims 'text' to begin at that sentence.
@@ -827,16 +834,50 @@ def _clean_records_with_llm(records: List[dict], model: str, tracker=None) -> Li
 	"""
 	out: List[dict] = []
 	total_records = len(records)
-	
+
+	# Load chapter-cleaning checkpoint if available
+	saved_sentences: dict = {}  # href -> opening_sentence
+	if checkpoint_path and checkpoint_path.exists():
+		try:
+			raw = json.loads(checkpoint_path.read_text(encoding="utf-8"))
+			if epub_fingerprint and raw.get("epub_fingerprint") != epub_fingerprint:
+				logger.info("[RESUME] Discarding stale chapter-cleaning checkpoint (file changed)")
+			else:
+				for entry in raw.get("completed", []):
+					saved_sentences[entry["href"]] = entry["opening_sentence"]
+				if saved_sentences:
+					logger.info(f"[RESUME] Loaded chapter-cleaning checkpoint: "
+					            f"{len(saved_sentences)}/{total_records} chapters already cleaned")
+		except Exception:
+			pass
+
+	def _save_cleaning_ckpt() -> None:
+		if not checkpoint_path:
+			return
+		checkpoint_path.write_text(
+			json.dumps(
+				{
+					"epub_fingerprint": epub_fingerprint,
+					"completed": [
+						{"href": r.get("href", ""), "opening_sentence": r.get("opening_sentence", "")}
+						for r in out
+					],
+				},
+				indent=2,
+				ensure_ascii=False,
+			),
+			encoding="utf-8",
+		)
+
 	logger.debug("START_CLEANING=TRUE")  # Flag for web interface
 	sys.stdout.flush()
 	if tracker:
 		tracker.set_chapter_cleaning_progress(0, total_records)
 	time.sleep(0.5)  # Give web interface time to process
-	
+
 	logger.info(f"Aligning chapter starts: 0/{total_records} (0%)")
 	sys.stdout.flush()
-	
+
 	for i, rec in enumerate(records):
 		# Report progress before processing each chapter
 		completed = i
@@ -844,43 +885,67 @@ def _clean_records_with_llm(records: List[dict], model: str, tracker=None) -> Li
 		progress_line = f"Aligning chapter starts: {completed}/{total_records} ({progress_pct}%)"
 		logger.info(progress_line)
 		sys.stdout.flush()
-		
+
 		if tracker:
 			tracker.set_chapter_cleaning_progress(completed, total_records)
-		
+
+		href = rec.get("href", "")
 		text = rec.get("text") or ""
-		opening = _detect_opening_sentence_for_record(rec, model)
-		
-		# Add delay after LLM call to ensure UI can update
-		time.sleep(0.5)  # Half second delay to ensure synchronous updates
-		
-		start_idx = _find_sentence_start(text, opening) if opening else None
-		new_text = text
-		if start_idx is not None:
-			new_text = text[start_idx:]
-			# Clean leading blank lines
+
+		if href in saved_sentences:
+			# Resume: re-derive trimmed text locally without an LLM call
+			opening = saved_sentences[href]
+			start_idx = _find_sentence_start(text, opening) if opening else None
+			new_text = text[start_idx:] if start_idx is not None else text
 			new_text = re.sub(r"^\s*\n+", "", new_text)
-		new_rec = dict(rec)
-		new_rec["opening_sentence"] = opening or ""
-		new_rec["text"] = new_text
-		out.append(new_rec)
-		
+			new_rec = dict(rec)
+			new_rec["opening_sentence"] = opening
+			new_rec["text"] = new_text
+			out.append(new_rec)
+			logger.info(f"  [RESUME] Skipping already-cleaned: {rec.get('title') or href}")
+		else:
+			opening = _detect_opening_sentence_for_record(rec, model)
+
+			# Add delay after LLM call to ensure UI can update
+			time.sleep(0.5)  # Half second delay to ensure synchronous updates
+
+			start_idx = _find_sentence_start(text, opening) if opening else None
+			new_text = text
+			if start_idx is not None:
+				new_text = text[start_idx:]
+				# Clean leading blank lines
+				new_text = re.sub(r"^\s*\n+", "", new_text)
+			new_rec = dict(rec)
+			new_rec["opening_sentence"] = opening or ""
+			new_rec["text"] = new_text
+			out.append(new_rec)
+
+			# Save checkpoint after each LLM call
+			_save_cleaning_ckpt()
+
 		# Report progress after completing each chapter
 		completed = i + 1
 		progress_pct = int((completed / total_records) * 100)
 		progress_line = f"Aligning chapter starts: {completed}/{total_records} ({progress_pct}%)"
 		logger.info(progress_line)
 		sys.stdout.flush()
-		
+
 		if tracker:
 			tracker.set_chapter_cleaning_progress(completed, total_records)
-		
+
 		time.sleep(0.2)  # Additional delay to allow UI to update progressively
-	
+
 	logger.debug("END_CLEANING=TRUE")  # Flag for web interface
 	sys.stdout.flush()
 	if tracker:
 		tracker.set_chapter_cleaning_progress(total_records, total_records, done=True)
+
+	# Clean up checkpoint on success
+	if checkpoint_path and checkpoint_path.exists():
+		try:
+			checkpoint_path.unlink()
+		except Exception:
+			pass
 
 	# Log cleaning usage summary
 	try:
@@ -1033,124 +1098,237 @@ async def _is_valid_narrative_section(section: Section, epub_path: str, model: s
 		return True, tokens_used
 
 
-async def run_boundary_detection(epub_path: str, model: str, tracker=None) -> dict:
+async def run_boundary_detection(
+	epub_path: str,
+	model: str,
+	tracker=None,
+	checkpoint_path: Optional[Path] = None,
+) -> dict:
 	"""Find narrative boundaries using LLM-based top-to-bottom and bottom-to-top search."""
 	sections = _read_sections(epub_path)
-	
+
 	if not sections:
 		return {"kept_sections": [], "dropped": [], "error": "No sections found"}
-	
+
 	# Sort sections by order
 	sorted_sections = sorted(sections, key=lambda x: x.order)
-	
+
 	logger.info(f"Found {len(sorted_sections)} sections total")
-	
+
 	if tracker:
 		tracker.set_top_boundary_progress(0)
-	
-	# Pre-filter: Remove all sections with less than 100 tokens
-	logger.info("Pre-filtering short sections...")
-	substantial_sections = []
-	dropped_short = []
-	
-	for section in sorted_sections:
-		# Get text content and check token count
-		_ensure_deps()
-		from ebooklib import epub as _epub
-		import urllib.parse
-		
-		book = _epub.read_epub(epub_path)
-		
-		# Parse href to separate file path and fragment
-		href_parts = (section.href or "").split('#', 1)
-		href_file = href_parts[0].lstrip('./')
-		fragment_id = href_parts[1] if len(href_parts) > 1 else None
-		href_decoded = urllib.parse.unquote(href_file)
-		
-		text = ""
+
+	# --- Checkpoint setup (before pre-filtering) ---
+	epub_fingerprint = f"{epub_path}::{os.path.getmtime(epub_path)}"
+	ckpt: dict = {}
+	if checkpoint_path and checkpoint_path.exists():
 		try:
-			# Try with decoded href first
-			item = book.get_item_with_href(href_decoded)
-			if item is None:
-				# Fallback to original href
-				item = book.get_item_with_href(href_file)
-			if item is not None:
-				html = item.get_content().decode("utf-8", errors="ignore")
-				text = _extract_fragment_content(html, fragment_id)
+			raw = json.loads(checkpoint_path.read_text(encoding="utf-8"))
+			if raw.get("epub_fingerprint") == epub_fingerprint:
+				ckpt = raw
+				n_pre = len(ckpt.get("prefilter_checked_hrefs", []))
+				n_top = len(ckpt.get("top_results", []))
+				n_bot = len(ckpt.get("bottom_results", []))
+				logger.info(
+					f"[RESUME] Loaded boundary detection checkpoint "
+					f"(prefilter: {n_pre} checked, {n_top} top, {n_bot} bottom results)"
+				)
+			else:
+				logger.info("[RESUME] Discarding stale boundary checkpoint (file changed)")
 		except Exception:
-			text = ""
-		
-		text_tokens = (text or "").split()
-		if len(text_tokens) >= 100:
-			substantial_sections.append(section)
+			ckpt = {}
+
+	prefilter_done: bool = ckpt.get("prefilter_done", False)
+	substantial_hrefs_saved: list = ckpt.get("substantial_hrefs", [])
+	prefilter_checked_hrefs: set = set(ckpt.get("prefilter_checked_hrefs", []))
+	top_results: list = ckpt.get("top_results", [])   # [{href, is_narrative, tokens}]
+	top_done: bool = ckpt.get("top_done", False)
+	start_index = ckpt.get("start_index", None)
+	bottom_results: list = ckpt.get("bottom_results", [])
+	bottom_done: bool = ckpt.get("bottom_done", False)
+	end_index = ckpt.get("end_index", None)
+	total_tokens: int = sum(r.get("tokens", 0) for r in top_results + bottom_results)
+
+	# Build href->Section map for reconstructing Section objects from saved hrefs
+	section_map = {s.href: s for s in sorted_sections}
+
+	substantial_sections: list = []
+	dropped_short: list = []
+
+	def _save_boundary_ckpt() -> None:
+		if not checkpoint_path:
+			return
+		checkpoint_path.write_text(
+			json.dumps(
+				{
+					"epub_fingerprint": epub_fingerprint,
+					"prefilter_done": prefilter_done,
+					"substantial_hrefs": [s.href for s in substantial_sections],
+					"prefilter_checked_hrefs": list(prefilter_checked_hrefs),
+					"top_results": top_results,
+					"top_done": top_done,
+					"start_index": start_index,
+					"bottom_results": bottom_results,
+					"bottom_done": bottom_done,
+					"end_index": end_index,
+				},
+				indent=2,
+			),
+			encoding="utf-8",
+		)
+
+	# Pre-filter: Remove all sections with less than 100 tokens
+	if prefilter_done:
+		# Reconstruct Section objects from saved hrefs
+		substantial_sections = [section_map[h] for h in substantial_hrefs_saved if h in section_map]
+		dropped_short = [s for s in sorted_sections if s.href not in set(substantial_hrefs_saved)]
+		logger.info(
+			f"[RESUME] Pre-filtering already done: "
+			f"{len(substantial_sections)} substantial, {len(dropped_short)} dropped"
+		)
+	else:
+		if prefilter_checked_hrefs:
+			logger.info(
+				f"[RESUME] Resuming pre-filtering from section "
+				f"{len(prefilter_checked_hrefs) + 1}/{len(sorted_sections)}"
+			)
+			# Reconstruct already-classified sections from checkpoint
+			substantial_set = set(substantial_hrefs_saved)
+			for s in sorted_sections:
+				if s.href in prefilter_checked_hrefs:
+					if s.href in substantial_set:
+						substantial_sections.append(s)
+					else:
+						dropped_short.append(s)
 		else:
-			dropped_short.append(section)
-			logger.debug(f"  ✗ Dropped (too short): {section.title} ({len(text_tokens)} tokens)")
-	
+			logger.info("Pre-filtering short sections...")
+
+		for section in sorted_sections:
+			if section.href in prefilter_checked_hrefs:
+				continue  # Already processed in a previous run
+
+			# Get text content and check token count
+			_ensure_deps()
+			from ebooklib import epub as _epub
+			import urllib.parse
+
+			book = _epub.read_epub(epub_path)
+
+			# Parse href to separate file path and fragment
+			href_parts = (section.href or "").split('#', 1)
+			href_file = href_parts[0].lstrip('./')
+			fragment_id = href_parts[1] if len(href_parts) > 1 else None
+			href_decoded = urllib.parse.unquote(href_file)
+
+			text = ""
+			try:
+				# Try with decoded href first
+				item = book.get_item_with_href(href_decoded)
+				if item is None:
+					# Fallback to original href
+					item = book.get_item_with_href(href_file)
+				if item is not None:
+					html = item.get_content().decode("utf-8", errors="ignore")
+					text = _extract_fragment_content(html, fragment_id)
+			except Exception:
+				text = ""
+
+			text_tokens = (text or "").split()
+			prefilter_checked_hrefs.add(section.href)
+			if len(text_tokens) >= 100:
+				substantial_sections.append(section)
+			else:
+				dropped_short.append(section)
+				logger.debug(f"  ✗ Dropped (too short): {section.title} ({len(text_tokens)} tokens)")
+
+			_save_boundary_ckpt()
+
+		prefilter_done = True
+		_save_boundary_ckpt()
+
 	logger.info(f"After pre-filtering: {len(substantial_sections)} substantial sections, {len(dropped_short)} short sections dropped")
-	
+
 	if not substantial_sections:
 		return {"kept_sections": [], "dropped": [s.href for s in sorted_sections], "error": "No substantial sections found"}
-	
+
 	# Each side can check up to half the substantial sections (minimum 5)
 	max_check_per_side = max(5, len(substantial_sections) // 2)
-	
-	start_index = None
-	end_index = None
-	total_tokens = 0
-	
+
 	logger.info(f"Searching for narrative boundaries in {len(substantial_sections)} substantial sections...")
 	sys.stdout.flush()
 	logger.debug(f"Will check up to {max_check_per_side} sections from each side")
 	sys.stdout.flush()
-	
+
 	# Search top-to-bottom for first valid section
 	# Need TWO consecutive narrative sections to confirm start boundary
 	logger.debug("START_TOP=TRUE")  # Flag for web interface
 	sys.stdout.flush()
 	await asyncio.sleep(0.5)  # Give web interface time to process
-	
-	logger.info("Searching top-to-bottom for start boundary...")
-	sys.stdout.flush()
-	consecutive_narrative = 0
-	for i, section in enumerate(substantial_sections[:max_check_per_side]):
-		if tracker:
-			progress = int((i / min(max_check_per_side, len(substantial_sections))) * 100)
-			tracker.set_top_boundary_progress(progress)
-		
-		logger.info(f"  Checking section {i+1}: {section.title}")
+
+	if top_done:
+		logger.info("[RESUME] Top boundary already found, skipping top search")
+	else:
+		logger.info("Searching top-to-bottom for start boundary...")
 		sys.stdout.flush()
-		is_narrative, tokens_used = await _is_valid_narrative_section(section, epub_path, model)
-		total_tokens += tokens_used
-		
-		if is_narrative:
-			consecutive_narrative += 1
-			logger.info(f"  ✓ Narrative: {section.title} (consecutive: {consecutive_narrative})")
+		# Reconstruct consecutive_narrative from already-checked results
+		consecutive_narrative = 0
+		for r in top_results:
+			if r["is_narrative"]:
+				consecutive_narrative += 1
+			else:
+				consecutive_narrative = 0
+		if top_results:
+			logger.info(
+				f"[RESUME] Resuming top search from section {len(top_results) + 1} "
+				f"(consecutive_narrative={consecutive_narrative})"
+			)
+
+		for i, section in enumerate(substantial_sections[:max_check_per_side]):
+			if i < len(top_results):
+				continue  # Already checked in a previous run
+			if tracker:
+				progress = int((i / min(max_check_per_side, len(substantial_sections))) * 100)
+				tracker.set_top_boundary_progress(progress)
+
+			logger.info(f"  Checking section {i+1}: {section.title}")
 			sys.stdout.flush()
-			
-			if consecutive_narrative >= 2:
-				# Found two consecutive narrative sections, use the first one as start
-				start_index = i - 1  # Use the previous section as the start
-				logger.info(f"  ✓ Confirmed start boundary at section {start_index+1}: {substantial_sections[start_index].title}")
+			is_narrative, tokens_used = await _is_valid_narrative_section(section, epub_path, model)
+			total_tokens += tokens_used
+			top_results.append({"href": section.href, "is_narrative": is_narrative, "tokens": tokens_used})
+			_save_boundary_ckpt()
+
+			if is_narrative:
+				consecutive_narrative += 1
+				logger.info(f"  ✓ Narrative: {section.title} (consecutive: {consecutive_narrative})")
 				sys.stdout.flush()
-				break
-		else:
-			consecutive_narrative = 0  # Reset counter
-			logger.info(f"  ✗ Not narrative: {section.title}")
+
+				if consecutive_narrative >= 2:
+					# Found two consecutive narrative sections, use the first one as start
+					start_index = i - 1  # Use the previous section as the start
+					logger.info(f"  ✓ Confirmed start boundary at section {start_index+1}: {substantial_sections[start_index].title}")
+					sys.stdout.flush()
+					_save_boundary_ckpt()
+					break
+			else:
+				consecutive_narrative = 0  # Reset counter
+				logger.info(f"  ✗ Not narrative: {section.title}")
+				sys.stdout.flush()
+
+		# If we only found one narrative section at the end, use it
+		if start_index is None and consecutive_narrative == 1:
+			start_index = min(max_check_per_side - 1, len(substantial_sections) - 1)
+			logger.info(f"  ✓ Using single narrative section as start: {substantial_sections[start_index].title}")
 			sys.stdout.flush()
-	
-	# If we only found one narrative section at the end, use it
-	if start_index is None and consecutive_narrative == 1:
-		start_index = min(max_check_per_side - 1, len(substantial_sections) - 1)
-		logger.info(f"  ✓ Using single narrative section as start: {substantial_sections[start_index].title}")
-		sys.stdout.flush()
-	
+
+		top_done = True
+		_save_boundary_ckpt()
+
 	logger.debug("END_TOP=TRUE")  # Flag for web interface
 	sys.stdout.flush()
 	if tracker:
 		tracker.set_top_boundary_progress(100, done=True)
 	await asyncio.sleep(1)  # Give web interface time to update
-	
+
 	# Search bottom-to-top for last valid section
 	# Need TWO consecutive narrative sections to confirm end boundary
 	logger.debug("START_BOTTOM=TRUE")  # Flag for web interface
@@ -1158,50 +1336,73 @@ async def run_boundary_detection(epub_path: str, model: str, tracker=None) -> di
 	if tracker:
 		tracker.set_bottom_boundary_progress(0)
 	await asyncio.sleep(0.5)  # Give web interface time to process
-	
-	logger.info("Searching bottom-to-top for end boundary...")
-	sys.stdout.flush()
-	consecutive_narrative = 0
-	bottom_sections = substantial_sections[-max_check_per_side:]
-	for i, section in enumerate(reversed(bottom_sections)):
-		if tracker:
-			progress = int((i / min(max_check_per_side, len(bottom_sections))) * 100)
-			tracker.set_bottom_boundary_progress(progress)
-		
-		logger.info(f"  Checking section from end {i+1}: {section.title}")
+
+	if bottom_done:
+		logger.info("[RESUME] Bottom boundary already found, skipping bottom search")
+	else:
+		logger.info("Searching bottom-to-top for end boundary...")
 		sys.stdout.flush()
-		is_narrative, tokens_used = await _is_valid_narrative_section(section, epub_path, model)
-		total_tokens += tokens_used
-		
-		if is_narrative:
-			consecutive_narrative += 1
-			logger.info(f"  ✓ Narrative: {section.title} (consecutive: {consecutive_narrative})")
+		# Reconstruct consecutive_narrative from already-checked results (reversed order)
+		consecutive_narrative = 0
+		for r in bottom_results:
+			if r["is_narrative"]:
+				consecutive_narrative += 1
+			else:
+				consecutive_narrative = 0
+		if bottom_results:
+			logger.info(
+				f"[RESUME] Resuming bottom search from section {len(bottom_results) + 1} from end "
+				f"(consecutive_narrative={consecutive_narrative})"
+			)
+
+		bottom_sections = substantial_sections[-max_check_per_side:]
+		for i, section in enumerate(reversed(bottom_sections)):
+			if i < len(bottom_results):
+				continue  # Already checked in a previous run
+			if tracker:
+				progress = int((i / min(max_check_per_side, len(bottom_sections))) * 100)
+				tracker.set_bottom_boundary_progress(progress)
+
+			logger.info(f"  Checking section from end {i+1}: {section.title}")
 			sys.stdout.flush()
-			
-			if consecutive_narrative >= 2:
-				# Found two consecutive narrative sections, use the second one as end
-				end_index = len(substantial_sections) - i  # Use the next section as the end
-				logger.info(f"  ✓ Confirmed end boundary: {substantial_sections[end_index].title}")
+			is_narrative, tokens_used = await _is_valid_narrative_section(section, epub_path, model)
+			total_tokens += tokens_used
+			bottom_results.append({"href": section.href, "is_narrative": is_narrative, "tokens": tokens_used})
+			_save_boundary_ckpt()
+
+			if is_narrative:
+				consecutive_narrative += 1
+				logger.info(f"  ✓ Narrative: {section.title} (consecutive: {consecutive_narrative})")
 				sys.stdout.flush()
-				break
-		else:
-			consecutive_narrative = 0  # Reset counter
-			logger.info(f"  ✗ Not narrative: {section.title}")
+
+				if consecutive_narrative >= 2:
+					# Found two consecutive narrative sections, use the second one as end
+					end_index = len(substantial_sections) - i  # Use the next section as the end
+					logger.info(f"  ✓ Confirmed end boundary: {substantial_sections[end_index].title}")
+					sys.stdout.flush()
+					_save_boundary_ckpt()
+					break
+			else:
+				consecutive_narrative = 0  # Reset counter
+				logger.info(f"  ✗ Not narrative: {section.title}")
+				sys.stdout.flush()
+
+		# If we only found one narrative section at the end, use it
+		if end_index is None and consecutive_narrative == 1:
+			reverse_index = min(max_check_per_side - 1, len(substantial_sections) - 1)
+			end_index = len(substantial_sections) - 1 - reverse_index
+			logger.info(f"  ✓ Using single narrative section as end: {substantial_sections[end_index].title}")
 			sys.stdout.flush()
-	
-	# If we only found one narrative section at the end, use it
-	if end_index is None and consecutive_narrative == 1:
-		reverse_index = min(max_check_per_side - 1, len(substantial_sections) - 1)
-		end_index = len(substantial_sections) - 1 - reverse_index
-		logger.info(f"  ✓ Using single narrative section as end: {substantial_sections[end_index].title}")
-		sys.stdout.flush()
-	
+
+		bottom_done = True
+		_save_boundary_ckpt()
+
 	logger.debug("END_BOTTOM=TRUE")  # Flag for web interface
 	sys.stdout.flush()
 	if tracker:
 		tracker.set_bottom_boundary_progress(100, done=True)
 	await asyncio.sleep(1)  # Give web interface time to update
-	
+
 	# If we couldn't find boundaries, fall back to keeping everything substantial
 	if start_index is None:
 		logger.warning("No start boundary found, using first substantial section")
@@ -1209,16 +1410,16 @@ async def run_boundary_detection(epub_path: str, model: str, tracker=None) -> di
 	if end_index is None:
 		logger.warning("No end boundary found, using last substantial section")
 		end_index = len(substantial_sections) - 1
-	
+
 	# Extract sections between boundaries (inclusive)
 	kept_sections_data = substantial_sections[start_index:end_index + 1]
-	
+
 	def _full_title(s: Section) -> str:
 		parts = [pt for pt in (s.parents or []) if pt]
 		if s.title:
 			parts.append(s.title)
 		return " — ".join(parts) if parts else (s.title or "")
-	
+
 	kept_sections = [
 		KeptSection(
 			href=s.href,
@@ -1228,14 +1429,21 @@ async def run_boundary_detection(epub_path: str, model: str, tracker=None) -> di
 		)
 		for s in kept_sections_data
 	]
-	
+
 	# Track what we dropped (both short sections and sections outside boundaries)
 	dropped_hrefs = []
 	# Add short sections
 	dropped_hrefs.extend([s.href for s in dropped_short])
 	# Add sections outside boundaries
 	dropped_hrefs.extend([s.href for i, s in enumerate(substantial_sections) if i < start_index or i > end_index])
-	
+
+	# Clean up checkpoint on success
+	if checkpoint_path and checkpoint_path.exists():
+		try:
+			checkpoint_path.unlink()
+		except Exception:
+			pass
+
 	# Log boundary detection usage summary
 	pu = _get_provider_usage_dict()
 	if pu.get("prompt_count"):

@@ -503,6 +503,7 @@ def epub_to_chapters(
     provider: Union[str, "BaseLLMProvider"] = "openai",
     api_key: Optional[str] = None,
     model: Optional[str] = None,
+    output_dir: Optional[Union[str, Path]] = None,
 ) -> List[dict]:
     """
     Extract chapters from an EPUB using LLM-powered boundary detection.
@@ -612,18 +613,32 @@ def epub_to_chapters(
     
     # Set the extraction provider
     _set_extraction_provider(llm_provider)
-    
+
+    # Compute checkpoint paths if an output directory was given
+    epub_fingerprint = f"{path}::{path.stat().st_mtime}"
+    boundary_ckpt: Optional[Path] = None
+    cleaning_ckpt: Optional[Path] = None
+    if output_dir is not None:
+        out_path = Path(output_dir)
+        out_path.mkdir(parents=True, exist_ok=True)
+        boundary_ckpt = out_path / "extraction_boundary.checkpoint.json"
+        cleaning_ckpt = out_path / "extraction_cleaning.checkpoint.json"
+
     # Silence noisy warnings from ebooklib
     warnings.filterwarnings("ignore", category=UserWarning, module=r"ebooklib.*")
     warnings.filterwarnings("ignore", category=FutureWarning, module=r"ebooklib.*")
-    
+
     try:
         # Run boundary detection (model param is legacy, provider is used now)
-        parsed = asyncio.run(run_boundary_detection(str(path), model or "", tracker=None))
-        
+        parsed = asyncio.run(
+            run_boundary_detection(
+                str(path), model or "", tracker=None, checkpoint_path=boundary_ckpt
+            )
+        )
+
         if not isinstance(parsed, dict) or "kept_sections" not in parsed:
             raise RuntimeError("Boundary detection failed: no sections found")
-        
+
         # Build KeptSection objects
         kept_objs = []
         for item in parsed.get("kept_sections", []):
@@ -634,13 +649,19 @@ def epub_to_chapters(
                     full_title=item.get("full_title") or item.get("title", ""),
                     order=int(item.get("order", 0) or 0),
                 ))
-        
+
         # Extract texts for sections
         records = _extract_texts_for_sections(str(path), kept_objs)
-        
+
         # Preprocess and clean records
         records = _preprocess_records_collapse_newlines(records)
-        records = _clean_records_with_llm(records, model or "", tracker=None)
+        records = _clean_records_with_llm(
+            records,
+            model or "",
+            tracker=None,
+            checkpoint_path=cleaning_ckpt,
+            epub_fingerprint=epub_fingerprint,
+        )
 
         # Regenerate text_with_ids from cleaned text since cleaning trims
         # the text to start at the opening sentence, making old IDs stale
