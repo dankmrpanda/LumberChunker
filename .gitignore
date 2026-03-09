@@ -1,5 +1,5 @@
-examples/5af1a7340e89__And_Then_There_Were_None_by_Agatha_Christie/
-examples/5af1a7340e89__And_Then_There_Were_None_by_Agatha_Christie_headers.txt
+examples/output
+examples/sources
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

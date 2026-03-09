@@ -21,6 +21,7 @@ LumberChunker uses an LLM to iteratively identify where content shifts, producin
 
 ```bash
 pip install lumberchunker
+pip install -e .
 ```
 
 Set your API key via environment variable or a `.env` file:
