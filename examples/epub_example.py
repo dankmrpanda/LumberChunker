@@ -18,7 +18,7 @@ from pathlib import Path
 # ============================================================
 
 # Path to the EPUB file
-EPUB_FILE = Path(__file__).parent / "sources" / "epubs" / "Catching_Fire-Suzanne_Collins.epub"
+EPUB_FILE = Path(__file__).parent / "sources" / "epubs" / "Hands-On_Large_Language_Models_-_Jay_Alammar.epub"
 
 # Provider: "gemini", "openai", "anthropic", or "ollama"
 PROVIDER = "gemini"
@@ -38,7 +38,7 @@ OUTPUT_DIR = "auto"
 #   None          -> all chapters
 #   [1, 3, 5]     -> chapters by 1-based index
 #   ["Prologue"]  -> chapters by title substring (case-insensitive)
-CHAPTERS = None
+CHAPTERS = [1]
 
 # Set to True to only list chapters (no chunking)
 LIST_CHAPTERS_ONLY = False

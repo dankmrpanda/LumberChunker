@@ -47,33 +47,6 @@ def split_into_paragraphs(text: str) -> List[str]:
     return paragraphs
 
 
-def add_ids_to_chunks(chunks: List[str]) -> List[str]:
-    """
-    Add ID prefixes to each chunk.
-    
-    Args:
-        chunks: List of text chunks.
-        
-    Returns:
-        List of chunks with "ID X: " prefix.
-    """
-    return [f"ID {i}: {chunk}" for i, chunk in enumerate(chunks)]
-
-
-def remove_ids_from_chunks(chunks: List[str]) -> List[str]:
-    """
-    Remove ID prefixes from chunks.
-    
-    Args:
-        chunks: List of chunks with ID prefixes.
-        
-    Returns:
-        List of chunks without ID prefixes.
-    """
-    pattern = r'^ID \d+:\s*'
-    return [re.sub(pattern, '', chunk) for chunk in chunks]
-
-
 def _strip_thinking_blocks(text: str) -> str:
     """
     Strip reasoning/thinking blocks emitted by reasoning models.
