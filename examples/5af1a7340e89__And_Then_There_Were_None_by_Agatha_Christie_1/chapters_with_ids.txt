@@ -1,0 +1,263 @@
+EPUB Chapters with Paragraph IDs
+==================================================
+
+=== Chapter 0: Chapter One ===
+Word Count: 3,235
+----------------------------------------
+
+ID 0: In the corner of a first-class smoking carriage, Mr. Justice Wargrave, lately retired from the bench, puffed at a cigar and ran an interested eye through the political news in The Times.
+
+ID 1: He laid the paper down and glanced out of the window. They were running now through Somerset. He glanced at his watch—another two hours to go.
+
+ID 2: He went over in his mind all that had appeared in the papers about Soldier Island. There had been its original purchase by an American millionaire who was crazy about yachting—and an account of the luxurious modern house he had built on this little island off the Devon coast. The unfortunate fact that the new third wife of the American millionaire was a bad sailor had led to the subsequent putting up of the house and island for sale. Various glowing advertisements of it had appeared in the papers. Then came the first bald statement that it had been bought—by a Mr. Owen. After that the rumours of the gossip writers had started. Soldier Island had really been bought by Miss Gabrielle Turl, the Hollywood film star! She wanted to spend some months there free from all publicity! Busy Bee had hinted delicately that it was to be an abode for Royalty??! Mr. Merryweather had had it whispered to him that it had been bought for a honeymoon—Young Lord L—had surrendered to Cupid at last! Jonas knew for a fact that it had been purchased by the Admiralty with a view to carrying out some very hush-hush experiments!
+
+ID 3: Definitely, Soldier Island was news!
+
+ID 4: From his pocket Mr. Justice Wargrave drew out a letter. The handwriting was practically illegible but words here and there stood out with unexpected clarity. Dearest Lawrence … such years since I heard anything of you … must come to Soldier Island … the most enchanting place … so much to talk over … old days … communion with nature … bask in sunshine …12.40 from Paddington … meet you at Oakbridge … and his correspondent signed herself with a flourish his ever Constance Culmington.
+
+ID 5: Mr. Justice Wargrave cast back in his mind to remember when exactly he had last seen Lady Constance Culmington. It must be seven—no, eight years ago. She had then been going to Italy to bask in the sun and be at one with Nature and the contadini. Later, he had heard, she had proceeded to Syria where she proposed to bask in a yet stronger sun and live at one with Nature and the bedouin.
+
+ID 6: Constance Culmington, he reflected to himself, was exactly the sort of woman who would buy an island and surround herself with mystery! Nodding his head in gentle approval of his logic, Mr. Justice Wargrave allowed his head to nod….
+
+ID 7: He slept….
+
+ID 8: II
+
+ID 9: Vera Claythorne, in a third-class carriage with five other travellers in it, leaned her head back and shut her eyes. How hot it was travelling by train today! It would be nice to get to the sea! Really a great piece of luck getting this job. When you wanted a holiday post it nearly always meant looking after a swarm of children—secretarial holiday posts were much more difficult to get. Even the agency hadn’t held out much hope.
+
+ID 10: And then the letter had come.
+
+ID 11: “I have received your name from the Skilled Women’s Agency together with their recommendation. I understand they know you personally. I shall be glad to pay you the salary you ask and shall expect you to take up your duties on August 8th. The train is the 12.40 from Paddington and you will be met at Oakbridge station. I enclose five £1 notes for expenses.
+
+ID 12: Yours truly,
+ Una Nancy Owen.”
+
+ID 13: And at the top was the stamped address, Soldier Island, Sticklehaven, Devon….
+
+ID 14: Soldier Island! Why, there had been nothing else in the papers lately! All sorts of hints and interesting rumours. Though probably they were mostly untrue. But the house had certainly been built by a millionaire and was said to be absolutely the last word in luxury.
+
+ID 15: Vera Claythorne, tired by a recent strenuous term at school, thought to herself, “Being a games mistress in a third-class school isn’t much of a catch … If only I could get a job at some decent school.”
+
+ID 16: And then, with a cold feeling round her heart, she thought: “But I’m lucky to have even this. After all, people don’t like a Coroner’s Inquest, even if the Coroner did acquit me of all blame!”
+
+ID 17: He had even complimented her on her presence of mind and courage, she remembered. For an inquest it couldn’t have gone better. And Mrs. Hamilton had been kindness itself to her—only Hugo—but she wouldn’t think of Hugo!
+
+ID 18: Suddenly, in spite of the heat in the carriage she shivered and wished she wasn’t going to the sea. A picture rose clearly before her mind. Cyril’s head, bobbing up and down, swimming to the rock … up and down—up and down … and herself, swimming in easy practised strokes after him—cleaving her way through the water but knowing, only too surely, that she wouldn’t be in time….
+
+ID 19: The sea—its deep warm blue—mornings spent lying out on the sands—Hugo—Hugo who had said he loved her….
+
+ID 20: She must not think of Hugo….
+
+ID 21: She opened her eyes and frowned across at the man opposite her. A tall man with a brown face, light eyes set rather close together and an arrogant, almost cruel mouth.
+
+ID 22: She thought to herself:
+
+ID 23: I bet he’s been to some interesting parts of the world and seen some interesting things….
+
+ID 24: III
+
+ID 25: Philip Lombard, summing up the girl opposite in a mere flash of his quick moving eyes thought to himself:
+
+ID 26: “Quite attractive—a bit schoolmistressy perhaps.”
+
+ID 27: A cool customer, he should imagine—and one who could hold her own—in love or war. He’d rather like to take her on….
+
+ID 28: He frowned. No, cut out all that kind of stuff. This was business. He’d got to keep his mind on the job.
+
+ID 29: What exactly was up, he wondered? That little Jew had been damned mysterious.
+
+ID 30: “Take it or leave it, Captain Lombard.”
+
+ID 31: He had said thoughtfully:
+
+ID 32: “A hundred guineas, eh?”
+
+ID 33: He had said it in a casual way as though a hundred guineas was nothing to him. A hundred guineas when he was literally down to his last square meal! He had fancied, though, that the little Jew had not been deceived—that was the damnable part about Jews, you couldn’t deceive them about money—they knew!
+
+ID 34: He said in the same casual tone:
+
+ID 35: “And you can’t give me any further information?”
+
+ID 36: Mr. Isaac Morris had shaken his little bald head very positively.
+
+ID 37: “No, Captain Lombard, the matter rests there. It is understood by my client that your reputation is that of a good man in a tight place. I am empowered to hand you one hundred guineas in return for which you will travel to Sticklehaven, Devon. The nearest station is Oakbridge, you will be met there and motored to Sticklehaven where a motor launch will convey you to Soldier Island. There you will hold yourself at the disposal of my client.”
+
+ID 38: Lombard had said abruptly:
+
+ID 39: “For how long?”
+
+ID 40: “Not longer than a week at most.”
+
+ID 41: Fingering his small moustache, Captain Lombard said:
+
+ID 42: “You understand I can’t undertake anything—illegal?”
+
+ID 43: He had darted a very sharp glance at the other as he had spoken. There had been a very faint smile on the thick Semitic lips of Mr. Morris as he answered gravely:
+
+ID 44: “If anything illegal is proposed, you will, of course, be at perfect liberty to withdraw.”
+
+ID 45: Damn the smooth little brute, he had smiled! It was as though he knew very well that in Lombard’s past actions legality had not always been a sine qua non….
+
+ID 46: Lombard’s own lips parted in a grin.
+
+ID 47: By Jove, he’d sailed pretty near the wind once or twice! But he’d always got away with it! There wasn’t much he drew the line at really….
+
+ID 48: No, there wasn’t much he’d draw the line at. He fancied that he was going to enjoy himself at Soldier Island….
+
+ID 49: IV
+
+ID 50: In a non-smoking carriage Miss Emily Brent sat very upright as was her custom. She was sixty-five and she did not approve of lounging. Her father, a Colonel of the old school, had been particular about deportment.
+
+ID 51: The present generation was shamelessly lax—in their carriage, and in every other way….
+
+ID 52: Enveloped in an aura of righteousness and unyielding principles, Miss Brent sat in her crowded third-class carriage and triumphed over its discomfort and its heat. Everyone made such a fuss over things nowadays! They wanted injections before they had teeth pulled—they took drugs if they couldn’t sleep—they wanted easy chairs and cushions and the girls allowed their figures to slop about anyhow and lay about half naked on the beaches in summer.
+
+ID 53: Miss Brent’s lips set closely. She would like to make an example of certain people.
+
+ID 54: She remembered last year’s summer holiday. This year, however, it would be quite different. Soldier Island….
+
+ID 55: Mentally she re-read the letter which she had already read so many times.
+
+ID 56: “Dear Miss Brent,
+
+ID 57: I do hope you remember me? We were together at Belhaven Guest House in August some years ago, and we seemed to have so much in common.
+
+ID 58: I am starting a guest house of my own on an island off the coast of Devon. I think there is really an opening for a place where there is good plain cooking and a nice old-fashioned type of person. None of this nudity and gramophones half the night. I shall be very glad if you could see your way to spending your summer holiday on Soldier Island—quite free—as my guest. Would early in August suit you? Perhaps the 8th.
+
+ID 59: Yours sincerely,
+ U.N.O—.”
+
+ID 60: What was the name? The signature was rather difficult to read. Emily Brent thought impatiently: “So many people write their signatures quite illegibly.”
+
+ID 61: She let her mind run back over the people at Belhaven. She had been there two summers running. There had been that nice middle-aged woman—Miss—Miss—now what was her name?—her father had been a Canon. And there had been a Mrs. Olton—Ormen—No, surely it was Oliver! Yes—Oliver.
+
+ID 62: Soldier Island! There had been things in the paper about Soldier Island—something about a film star—or was it an American millionaire?
+
+ID 63: Of course often those places went very cheap—islands didn’t suit everybody. They thought the idea was romantic but when they came to live there they realized the disadvantages and were only too glad to sell.
+
+ID 64: Emily Brent thought to herself: “I shall be getting a free holiday at any rate.”
+
+ID 65: With her income so much reduced and so many dividends not being paid, that was indeed something to take into consideration. If only she could remember a little more about Mrs.—or was it Miss—Oliver?
+
+ID 66: V
+
+ID 67: General Macarthur looked out of the carriage window. The train was just coming into Exeter, where he had to change. Damnable, these slow branch line trains! This place, Soldier Island, was really no distance at all as the crow flies.
+
+ID 68: He hadn’t got it clear who this fellow Owen was. A friend of Spoof Leggard’s, apparently—and of Johnnie Dyer’s.
+
+ID 69: “—One or two of your old cronies are coming—would like to have a talk over old times.”
+
+ID 70: Well, he’d enjoy a chat about old times. He’d had a fancy lately that fellows were rather fighting shy of him. All owing to that damned rumour! By God, it was pretty hard—nearly thirty years ago now! Armitage had talked, he supposed. Damned young pup! What did he know about it? Oh, well, no good brooding about these things! One fancied things sometimes—fancied a fellow was looking at you queerly.
+
+ID 71: This Soldier Island, now, he’d be interested to see it. A lot of gossip flying about. Looked as though there might be something in the rumour that the Admiralty or the War Office or the Air Force had got hold of it….
+
+ID 72: Young Elmer Robson, the American millionaire, had actually built the place. Spent thousands on it, so it was said. Every mortal luxury….
+
+ID 73: Exeter! And an hour to wait! And he didn’t want to wait. He wanted to get on….
+
+ID 74: VI
+
+ID 75: Dr. Armstrong was driving his Morris across Salisbury Plain. He was very tired … Success had its penalties. There had been a time when he had sat in his consulting room in Harley Street, correctly apparelled, surrounded with the most up to date appliances and the most luxurious furnishings and waited—waited through the empty days for his venture to succeed or fail….
+
+ID 76: Well, it had succeeded! He’d been lucky! Lucky and skilful of course. He was a good man at his job—but that wasn’t enough for success. You had to have luck as well. And he’d had it! An accurate diagnosis, a couple of grateful women patients—women with money and position—and word had got about. “You ought to try Armstrong—quite a young man—but so clever—Pam had been to all sorts of people for years and he put his finger on the trouble at once!” The ball had started rolling.
+
+ID 77: And now Dr. Armstrong had definitely arrived. His days were full. He had little leisure. And so, on this August morning, he was glad that he was leaving London and going to be for some days on an island off the Devon coast. Not that it was exactly a holiday. The letter he had received had been rather vague in its terms, but there was nothing vague about the accompanying cheque. A whacking fee. These Owens must be rolling in money. Some little difficulty, it seemed, a husband who was worried about his wife’s health and wanted a report on it without her being alarmed. She wouldn’t hear of seeing a doctor. Her nerves—
+
+ID 78: Nerves! The doctor’s eyebrows went up. These women and their nerves! Well, it was good for business after all. Half the women who consulted him had nothing the matter with them but boredom, but they wouldn’t thank you for telling them so! And one could usually find something.
+
+ID 79: “A slightly uncommon condition of the (some long word) nothing at all serious—but it needs just putting right. A simple treatment.”
+
+ID 80: Well, medicine was mostly faith-healing when it came to it. And he had a good manner—he could inspire hope and belief.
+
+ID 81: Lucky that he’d managed to pull himself together in time after that business ten—no, fifteen years ago. It had been a near thing, that! He’d been going to pieces. The shock had pulled him together. He’d cut out drink altogether. By Jove, it had been a near thing, though….
+
+ID 82: With a devastating ear-splitting blast on the horn an enormous Super-Sports Dalmain car rushed past him at eighty miles an hour. Dr. Armstrong nearly went into the hedge. One of these young fools who tore round the country. He hated them. That had been a near shave, too. Damned young fool!
+
+ID 83: VII
+
+ID 84: Tony Marston, roaring down into Mere, thought to himself:
+
+ID 85: “The amount of cars crawling about the roads is frightful. Always something blocking your way. And they will drive in the middle of the road! Pretty hopeless driving in England, anyway…. Not like France where you really could let out….”
+
+ID 86: Should he stop here for a drink, or push on? Heaps of time! Only another hundred miles and a bit to go. He’d have a gin and ginger beer. Fizzing hot day!
+
+ID 87: This island place ought to be rather good fun—if the weather lasted. Who were these Owens, he wondered? Rich and stinking, probably. Badger was rather good at nosing people like that out. Of course, he had to, poor old chap, with no money of his own….
+
+ID 88: Hope they’d do one well in drinks. Never knew with these fellows who’d made their money and weren’t born to it. Pity that story about Gabrielle Turl having bought Soldier Island wasn’t true. He’d like to have been in with that film star crowd.
+
+ID 89: Oh, well, he supposed there’d be a few girls there….
+
+ID 90: Coming out of the hotel, he stretched himself, yawned, looked up at the blue sky and climbed into the Dalmain.
+
+ID 91: Several young women looked at him admiringly—his six feet of well-proportioned body, his crisp hair, tanned face, and intensely blue eyes.
+
+ID 92: He let in the clutch with a roar and leapt up the narrow street. Old men and errand boys jumped for safety. The latter looked after the car admiringly.
+
+ID 93: Anthony Marston proceeded on his triumphal progress.
+
+ID 94: VIII
+
+ID 95: Mr. Blore was in the slow train from Plymouth. There was only one other person in his carriage, an elderly seafaring gentleman with a bleary eye. At the present moment he had dropped off to sleep.
+
+ID 96: Mr. Blore was writing carefully in a little notebook.
+
+ID 97: “That’s the lot,” he muttered to himself. “Emily Brent, Vera Claythorne, Dr. Armstrong, Anthony Marston, old Justice Wargrave, Philip Lombard, General Macarthur, C.M.G., D.S.O. Manservant and wife: Mr. and Mrs. Rogers.”
+
+ID 98: He closed the notebook and put it back in his pocket. He glanced over at the corner and the slumbering man.
+
+ID 99: “Had one over the eight,” diagnosed Mr. Blore accurately.
+
+ID 100: He went over things carefully and conscientiously in his mind.
+
+ID 101: “Job ought to be easy enough,” he ruminated. “Don’t see how I can slip up on it. Hope I look all right.”
+
+ID 102: He stood up and scrutinized himself anxiously in the glass. The face reflected there was of a slightly military cast with a moustache. There was very little expression in it. The eyes were grey and set rather close together.
+
+ID 103: “Might be a Major,” said Mr. Blore. “No, I forgot. There’s that old military gent. He’d spot me at once.”
+
+ID 104: “South Africa,” said Mr. Blore, “that’s my line! None of these people have anything to do with South Africa, and I’ve just been reading that travel folder so I can talk about it all right.”
+
+ID 105: Fortunately there were all sorts and types of colonials. As a man of means from South Africa, Mr. Blore felt that he could enter into any society unchallenged.
+
+ID 106: Soldier Island. He remembered Soldier Island as a boy … Smelly sort of rock covered with gulls—stood about a mile from the coast.
+
+ID 107: Funny idea to go and build a house on it! Awful in bad weather! But millionaires were full of whims!
+
+ID 108: The old man in the corner woke up and said:
+
+ID 109: “You can’t never tell at sea—never!”
+
+ID 110: Mr. Blore said soothingly, “That’s right. You can’t.”
+
+ID 111: The old man hiccupped twice and said plaintively:
+
+ID 112: “There’s a squall coming.”
+
+ID 113: Mr. Blore said:
+
+ID 114: “No, no, mate, it’s a lovely day.”
+
+ID 115: The old man said angrily:
+
+ID 116: “There’s a squall ahead. I can smell it.”
+
+ID 117: “Maybe you’re right,” said Mr. Blore pacifically.
+
+ID 118: The train stopped at a station and the old fellow rose unsteadily.
+
+ID 119: “Thish where I get out.” He fumbled with the window. Mr. Blore helped him.
+
+ID 120: The old man stood in the doorway. He raised a solemn hand and blinked his bleary eyes.
+
+ID 121: “Watch and pray,” he said. “Watch and pray. The day of judgment is at hand.”
+
+ID 122: He collapsed through the doorway on to the platform. From a recumbent position he looked up at Mr. Blore and said with immense dignity:
+
+ID 123: “I’m talking to you, young man. The day of judgment is very close at hand.”
+
+ID 124: Subsiding on to his seat Mr. Blore thought to himself: He’s nearer the day of judgment than I am!
+
+ID 125: But there, as it happens, he was wrong….
+
+==================================================
+

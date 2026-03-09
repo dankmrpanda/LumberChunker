@@ -1,7 +1,8 @@
 # LumberChunker
 
-LLM-powered semantic document segmentation for long-form narrative documents.
+**LLM-powered semantic document segmentation for long-form narrative documents.**
 
+[![PyPI version](https://img.shields.io/pypi/v/lumberchunker.svg)](https://pypi.org/project/lumberchunker/)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
@@ -9,11 +10,23 @@ Based on the research paper [LumberChunker: Long-Form Narrative Document Segment
 
 ![LumberChunker Pipeline](LumberChunker_pipeline.png)
 
+LumberChunker uses an LLM to iteratively identify where content shifts, producing semantically coherent chunks that are logically independent — ideal for RAG pipelines and narrative analysis.
+
+---
+
 ## Installation
 
 ```bash
 pip install lumberchunker
 ```
+
+Set your API key via environment variable or a `.env` file:
+
+```bash
+export GEMINI_API_KEY="your-key"   # default provider
+```
+
+---
 
 ## Quick Start
 
@@ -23,101 +36,243 @@ from lumberchunker import LumberChunker
 chunker = LumberChunker(api_key="your-gemini-api-key")
 chunks = chunker.chunk("Your long document text here...")
 
-# Save to file
+# Each chunk is a dict with 'id', 'text', and paragraph range metadata
+for chunk in chunks:
+    print(chunk["text"][:100])
+```
+
+### Saving output (enables stop & resume)
+
+```python
 chunks = chunker.chunk("Your text...", output_path="chunks.txt")
 ```
 
-Other providers: `"openai"`, `"anthropic"`, `"ollama"` (local, no key needed).
+---
+
+## Configuration
+
+| Provider | Constructor arg | Environment variable | Default model |
+| :--- | :--- | :--- | :--- |
+| **Gemini** (default) | `provider="gemini"` | `GEMINI_API_KEY` | `gemini-2.0-flash` |
+| **OpenAI** | `provider="openai"` | `OPENAI_API_KEY` | `gpt-4o` |
+| **Anthropic** | `provider="anthropic"` | `ANTHROPIC_API_KEY` | `claude-sonnet-4-20250514` |
+| **Ollama** | `provider="ollama"` | — | `llama3.3` |
 
 ```python
 chunker = LumberChunker(provider="openai", api_key="your-key")
-chunker = LumberChunker(provider="ollama", model="llama3.3")
+chunker = LumberChunker(provider="anthropic", api_key="your-key")
+chunker = LumberChunker(provider="ollama", model="llama3.3")  # local, no key needed
 ```
 
-## EPUB Support
+---
+
+## API Reference
+
+### `LumberChunker(provider, api_key, model, target_chunk_tokens, verbose)`
+
+Creates a chunker instance.
+
+| Parameter | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `provider` | `str` | `"gemini"` | LLM provider: `"gemini"`, `"openai"`, `"anthropic"`, `"ollama"` |
+| `api_key` | `str \| None` | `None` | API key. Falls back to the relevant environment variable. |
+| `model` | `str \| None` | `None` | Model name. Uses provider default if omitted. |
+| `target_chunk_tokens` | `int` | `550` | Target token window size per chunking call. |
+| `verbose` | `bool` | `True` | Show progress output. |
+
+---
+
+### `chunk(text, output_path, return_metadata)`
+
+Chunk a raw text string.
 
 ```python
-# Simple — whole book as one text
-chunks = chunker.chunk_file("book.epub")
+chunks = chunker.chunk(text)
+chunks = chunker.chunk(text, output_path="out.txt")         # incremental save
+chunks = chunker.chunk(text, return_metadata=True)          # include paragraph ranges
+```
 
-# Chapter-by-chapter with auto-saved output
+| Parameter | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `text` | `str` | required | The document text to segment. |
+| `output_path` | `str \| None` | `None` | Path to save chunks incrementally. Enables stop & resume. |
+| `return_metadata` | `bool` | `False` | Include `start_id`/`end_id` paragraph indices in each chunk dict. |
+
+**Returns:** `list[dict]` — each item has `"id"` and `"text"` keys (plus range keys if `return_metadata=True`).
+
+---
+
+### `chunk_file(path, output_path, return_metadata)`
+
+Chunk a plain-text or EPUB file (EPUB is read as a single string).
+
+```python
+chunks = chunker.chunk_file("document.txt")
+chunks = chunker.chunk_file("book.epub", output_path="out.txt")
+```
+
+---
+
+### `chunk_epub(epub_path, output_dir, chapters, use_llm_extraction, trim_front_back_matter)`
+
+Process an EPUB chapter-by-chapter with automatic output management and checkpoint support.
+
+```python
 results = chunker.chunk_epub("book.epub", output_dir="auto")
-
-# Select specific chapters (by index or title)
-chunker.list_chapters("book.epub")                          # see what's available
-results = chunker.chunk_epub("book.epub", chapters=[1, 3])  # by index
-results = chunker.chunk_epub("book.epub", chapters=["Prologue"])  # by title
-
-# LLM-powered chapter detection (removes front/back matter)
-results = chunker.chunk_epub("book.epub", use_llm_extraction=True)
 ```
 
-## Token Usage
+```python
+results = chunker.chunk_epub(
+    "book.epub",
+    output_dir="my_output/book",       # explicit folder
+    chapters=[1, 3, 5],                # 1-based indices, or title substrings
+    use_llm_extraction=True,           # LLM prefix cleaning
+    trim_front_back_matter=True,       # remove copyright/credits pages
+)
+```
+
+| Parameter | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `epub_path` | `str \| Path` | required | Path to the `.epub` file. |
+| `output_dir` | `str \| Path` | `"auto"` | Output directory. `"auto"` creates a folder from the filename. |
+| `chapters` | `list \| None` | `None` | Chapter filter — integers (1-based index) or title substrings. `None` processes all chapters. |
+| `use_llm_extraction` | `bool` | `False` | Use an LLM to identify and trim non-narrative prefixes (e.g. "Chapter IV", baked-in headers). |
+| `trim_front_back_matter` | `bool` | `False` | Use an LLM to detect and remove non-narrative chapters (copyright, dedications, etc.). |
+
+**Returns:** `list[dict]` — one entry per chapter with `"chapter"`, `"index"`, and `"chunks"` keys.
+
+---
+
+### `list_chapters(epub_path)`
+
+Inspect EPUB structure without chunking.
 
 ```python
-chunks = chunker.chunk("Your text...")
-print(chunker.usage.to_dict())
-# {'prompt_count': 12, 'total_input_tokens': 8420, 'total_output_tokens': 156,
-#  'total_tokens': 8576, 'total_duration_ms': 4230.5}
+chapters = chunker.list_chapters("book.epub")
+for ch in chapters:
+    print(ch["index"], ch["chapter"], ch["word_count"])
+```
+
+**Returns:** `list[dict]` with `"index"`, `"chapter"`, and `"word_count"` keys.
+
+---
+
+### `usage`
+
+Token and call counter, accessible after any chunking operation.
+
+```python
+stats = chunker.usage.to_dict()
+# {
+#   "prompt_count": 42,
+#   "input_tokens": 18000,
+#   "output_tokens": 1200,
+#   "total_tokens": 19200
+# }
 
 chunker.usage.reset()  # zero counters between runs
 ```
 
-## Configuration
+---
 
-Set API keys via environment variables or a `.env` file:
+## CLI
+
+LumberChunker ships a command-line interface:
 
 ```bash
-GEMINI_API_KEY=your-key      # default provider
-OPENAI_API_KEY=your-key
-ANTHROPIC_API_KEY=your-key
+# Chunk a plain-text file
+lumberchunker document.txt
+
+# Chunk a plain-text file with a specific provider
+lumberchunker document.txt --provider anthropic
+
+# Chunk an EPUB, auto-naming the output folder
+lumberchunker book.epub
+
+# List chapters without chunking
+lumberchunker book.epub --list-chapters
+
+# Chunk specific chapters only
+lumberchunker book.epub --chapters 1 3 5
+
+# Full narrative cleaning
+lumberchunker book.epub --use-llm-extraction --trim
+
+# Specify output location
+lumberchunker book.epub --output my_output/
 ```
 
-| Provider | Default Model |
-|----------|---------------|
-| Gemini (default) | `gemini-2.0-flash` |
-| OpenAI | `gpt-4o` |
-| Anthropic | `claude-sonnet-4-20250514` |
-| Ollama | `llama3.3` |
+**All options:**
 
-## API Reference
+```
+positional:
+  file                  Path to input file (.txt, .epub, ...)
 
-| Method | Description |
-|--------|-------------|
-| `LumberChunker(provider, api_key, model, target_chunk_tokens=550, temperature=0.1, verbose=True)` | Create a chunker |
-| `chunk(text, output_path=None, return_metadata=False)` | Chunk a string |
-| `chunk_file(file_path, output_path=None, return_metadata=False)` | Chunk a text/EPUB file |
-| `chunk_epub(epub_path, output_dir=None, chapters=None, use_llm_extraction=False)` | Chunk EPUB by chapters |
-| `list_chapters(epub_path)` | List chapters without chunking |
-| `usage` | `UsageStats` — prompt_count, total_input/output/total_tokens, total_duration_ms |
+provider:
+  --provider            gemini | openai | anthropic | ollama  (default: gemini)
+  --api-key             API key (falls back to env var)
+  --model               Model name override
+
+chunking:
+  --target-tokens       Target token window size (default: 550)
+  -o, --output          Output file (text) or directory (EPUB)
+
+EPUB:
+  --chapters            1-based indices or title substrings
+  --list-chapters       List chapters and exit
+  --use-llm-extraction  LLM-based prefix cleaning
+  --trim                Remove front/back matter chapters
+
+general:
+  -q, --quiet           Suppress progress output
+  --metadata            Include paragraph range metadata in output
+```
+
+---
+
+## Stop & Resume
+
+For large books, chunking can take time. LumberChunker automatically writes a `.checkpoint.json` alongside your output. If a run is interrupted, re-run the exact same command and it will pick up where it left off — no duplicate API calls.
+
+```python
+# Run once — saves progress to chunks.txt.checkpoint.json
+chunks = chunker.chunk(long_text, output_path="chunks.txt")
+
+# Run again after interruption — resumes automatically
+chunks = chunker.chunk(long_text, output_path="chunks.txt")
+```
+
+---
 
 ## Examples
 
 ```bash
-# Chunk a text document (interactive provider selection)
+# Basic text chunking
 python examples/example.py
 
-# Chunk an EPUB file
-python examples/epub_example.py path/to/book.epub
+# EPUB chapter-by-chapter chunking
+python examples/epub_example.py
 
-# List chapters in an EPUB
-python examples/epub_example.py path/to/book.epub --list-chapters
+# List chapters only
+python examples/epub_example.py --list-chapters
 
-# Chunk specific chapters only
-python examples/epub_example.py path/to/book.epub --chapters 1 3 5
+# Process specific chapters
+python examples/epub_example.py --chapters 1 3 5
 ```
+
+---
 
 ## Citation
 
 ```bibtex
 @misc{duarte2024lumberchunker,
-      title={LumberChunker: Long-Form Narrative Document Segmentation}, 
+      title={LumberChunker: Long-Form Narrative Document Segmentation},
       author={André V. Duarte and João Marques and Miguel Graça and Miguel Freire and Lei Li and Arlindo L. Oliveira},
       year={2024},
       eprint={2406.17526},
       archivePrefix={arXiv},
       primaryClass={cs.CL},
-      url={https://arxiv.org/abs/2406.17526}, 
+      url={https://arxiv.org/abs/2406.17526},
 }
 ```
 
